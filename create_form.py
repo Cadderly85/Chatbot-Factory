@@ -88,23 +88,39 @@ def create_form(title: str, spreadsheet_id: str = None) -> dict:
     else:
         sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
 
-    # ─── Créer le form ──────────────────────────────────────────────────
-    form = {
-        "info": {
-            "title": title,
-            "description": (
-                "Merci de remplir ce formulaire pour nous aider à créer votre agent conversationnel "
-                "sur mesure. Plus vos réponses sont détaillées, plus votre agent sera efficace!\n\n"
-                "⏱️ Temps estimé : 15-20 minutes\n"
-                "📧 Questions? Contactez-nous à info@chatbotfactory.xyz"
-            ),
-        }
-    }
-
-    result = forms_service.forms().create(body=form).execute()
+    # Créer le form avec juste le titre (l'API n'accepte que ça à la création)
+    import time
+    form = {"info": {"title": title}}
+    for attempt in range(3):
+        try:
+            result = forms_service.forms().create(body=form).execute()
+            break
+        except Exception as e:
+            if attempt < 2:
+                logger.warning(f"⚠️ Erreur création form (tentative {attempt+1}/3): {e}")
+                time.sleep(2)
+            else:
+                raise
     form_id = result["formId"]
     form_url = result["responderUri"]
     logger.info(f"✅ Formulaire créé : {form_url}")
+
+    # Ajouter la description via batchUpdate
+    forms_service.forms().batchUpdate(formId=form_id, body={
+        "requests": [{
+            "updateFormInfo": {
+                "info": {
+                    "description": (
+                        "Merci de remplir ce formulaire pour nous aider à créer votre agent conversationnel "
+                        "sur mesure. Plus vos réponses sont détaillées, plus votre agent sera efficace!\n\n"
+                        "⏱️ Temps estimé : 15-20 minutes\n"
+                        "📧 Questions? Contactez-nous à info@chatbotfactory.xyz"
+                    ),
+                },
+                "updateMask": "description",
+            }
+        }]
+    }).execute()
 
     # ─── Ajouter les questions ──────────────────────────────────────────
     questions = build_questions()
