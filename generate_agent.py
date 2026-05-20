@@ -353,16 +353,38 @@ Quand tu transfères à un humain :
 
 def generate_agent_code(client_data: dict, system_prompt: str, output_dir: Path) -> Path:
     """
-    Génère le code Python complet de l'agent (FastAPI + LangChain).
+    Génère le code Python de l'agent (FastAPI léger, compatible Render 512MB).
+    Pas de ChromaDB, pas de LangChain lourd — API REST directe.
     """
     company_slug = slugify(client_data["metadata"].get("company_name", "agent"))
+    company_name = client_data["metadata"].get("company_name", "Client")
     has_calendar = bool(client_data["integrations"].get("calendar"))
     has_crm = bool(client_data["integrations"].get("crm"))
 
-    # ── agent.py ──────────────────────────────────────────────────────────
+    # Construire la section connaissances pour le system prompt
+    kb_section = ""
+    if client_data.get("services"):
+        kb_section += "\n## Services offerts\n"
+        for s in client_data["services"]:
+            kb_section += f"- {s}\n"
+    if client_data.get("faq"):
+        kb_section += "\n## FAQ\n"
+        for f in client_data["faq"]:
+            kb_section += f"{f}\n"
+
+    # Construire les infos de contact
+    contact_info = ""
+    meta = client_data["metadata"]
+    if meta.get("address"):
+        contact_info += f"\n- Adresse : {meta['address']}"
+    if meta.get("phone"):
+        contact_info += f"\n- Téléphone : {meta['phone']}"
+    if meta.get("email"):
+        contact_info += f"\n- Courriel : {meta['email']}"
+
     agent_code = f'''#!/usr/bin/env python3
 """
-Agent Conversationnel — {client_data["metadata"].get("company_name", "Client")}
+Agent Conversationnel — {company_name}
 Généré automatiquement par Chatbot Factory le {datetime.now().strftime("%Y-%m-%d %H:%M")}
 """
 
@@ -371,167 +393,174 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.chains import ConversationalRetrievalChain
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-
-# Choisir le backend LLM
-LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama")  # "ollama" | "groq" | "openrouter"
-
-if LLM_BACKEND == "ollama":
-    from langchain_community.chat_models import ChatOllama
-    llm = ChatOllama(model=os.getenv("OLLAMA_MODEL", "llama3.1:8b"), base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
-elif LLM_BACKEND == "groq":
-    from langchain_groq import ChatGroq
-    llm = ChatGroq(model=os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile"))
-elif LLM_BACKEND == "openrouter":
-    from langchain_openai import ChatOpenAI
-    llm = ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        model=os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-70b-instruct:free"),
-    )
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("{company_slug}_agent")
 
-# ─── Configuration ─────────────────────────────────────────────────────────
+# ─── Base de connaissances ──────────────────────────────────────────────────
 
-KNOWLEDGE_DIR = Path(__file__).parent / "knowledge_base"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+KB_DIR = Path(__file__).parent / "knowledge_base"
+knowledge_docs = []
 
-# ─── Base de connaissances (RAG) ───────────────────────────────────────────
-
-logger.info("Chargement de la base de connaissances...")
-embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-vectorstore = Chroma(
-    persist_directory=str(KNOWLEDGE_DIR / "chroma"),
-    embedding_function=embeddings,
-)
-retriever = vectorstore.as_retriever(search_kwargs={{"k": 5}})
-logger.info(f"✅ Base chargée : {{vectorstore._collection.count()}} documents")
+try:
+    with open(KB_DIR / "knowledge.json", "r", encoding="utf-8") as f:
+        knowledge_docs = json.load(f)
+    logger.info(f"✅ Base de connaissances chargée: {{len(knowledge_docs)}} documents")
+except Exception as e:
+    logger.warning(f"⚠️ knowledge.json non trouvé: {{e}}")
 
 # ─── System Prompt ─────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = \"\"\"{system_prompt}\"\"\"
+SYSTEM_PROMPT = """{system_prompt}"""
 
-# ─── Outils (Tools) ────────────────────────────────────────────────────────
+# ─── Configuration LLM ─────────────────────────────────────────────────────
 
-import httplib2
-from google.oauth2.service_account import Credentials
-import gspread
-
-GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS", "credentials.json")
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "")
+LLM_BACKEND = os.getenv("LLM_BACKEND", "openrouter")
 
 
-def log_conversation(session_id: str, user_message: str, bot_response: str, 
-                     lead_info: dict = None, transferred: bool = False):
-    \"\"\"Journalise la conversation dans Google Sheets.\"\"\"
+def call_llm(messages):
+    """Appeler le LLM via API REST (pas de dépendance lourde)."""
+    import urllib.request
+
+    if LLM_BACKEND == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        model = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
+        url = "https://openrouter.ai/api/v1/chat/completions"
+    elif LLM_BACKEND == "groq":
+        api_key = os.getenv("GROQ_API_KEY", "")
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        url = "https://api.groq.com/openai/v1/chat/completions"
+    else:
+        return "Bonjour ! Je suis l'agent de démonstration. Comment puis-je vous aider?"
+
+    if not api_key:
+        return "⚠️ Clé API LLM non configurée. Veuillez contacter l'administrateur."
+
+    payload = json.dumps({{
+        "model": model,
+        "messages": messages,
+        "max_tokens": 500,
+        "temperature": 0.7,
+    }}).encode()
+
+    headers = {{
+        "Authorization": f"Bearer {{api_key}}",
+        "Content-Type": "application/json",
+    }}
+
+    req = urllib.request.Request(url, data=payload, headers=headers)
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode())
+            return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.error(f"Erreur LLM: {{e}}")
+        return "Désolé, une erreur s'est produite. Veuillez réessayer ou nous appeler."
+'''
+
+    # Ajouter les outils Google Sheets si configuré
+    agent_code += '''
+
+# ─── Google Sheets ──────────────────────────────────────────────────────────
+
+def log_conversation(session_id: str, user_message: str, bot_response: str, transferred: bool = False):
+    """Journalise la conversation dans Google Sheets."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    creds_path = os.getenv("GOOGLE_CREDENTIALS", "credentials.json")
+    spreadsheet_id = os.getenv("SPREADSHEET_ID", "")
+
+    if not spreadsheet_id or not Path(creds_path).exists():
+        return
+
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS, scopes=scopes)
+        creds = Credentials.from_service_account_file(creds_path, scopes=scopes)
         gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(SPREADSHEET_ID).worksheet("Conversations")
+        sheet = gc.open_by_key(spreadsheet_id).worksheet("Conversations")
         sheet.append_row([
             datetime.now().isoformat(),
             session_id,
             user_message[:500],
             bot_response[:500],
-            json.dumps(lead_info or {{}}),
             "OUI" if transferred else "NON",
         ])
     except Exception as e:
-        logger.error(f"Erreur log conversation: {{e}}")
+        logger.error(f"Erreur log conversation: {e}")
 
 
 def log_lead(name: str, email: str, phone: str, interest: str, source: str = "chatbot"):
-    \"\"\"Enregistre un lead dans Google Sheets.\"\"\"
+    """Enregistre un lead dans Google Sheets."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    creds_path = os.getenv("GOOGLE_CREDENTIALS", "credentials.json")
+    spreadsheet_id = os.getenv("SPREADSHEET_ID", "")
+
+    if not spreadsheet_id or not Path(creds_path).exists():
+        return
+
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS, scopes=scopes)
+        creds = Credentials.from_service_account_file(creds_path, scopes=scopes)
         gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(SPREADSHEET_ID).worksheet("Leads")
+        sheet = gc.open_by_key(spreadsheet_id).worksheet("Leads")
         sheet.append_row([
             datetime.now().isoformat(),
             name, email, phone, interest, source,
         ])
-        logger.info(f"✅ Lead enregistré: {{name}} ({{email}})")
+        logger.info(f"✅ Lead enregistré: {name} ({email})")
     except Exception as e:
-        logger.error(f"Erreur log lead: {{e}}")
-
+        logger.error(f"Erreur log lead: {e}")
 '''
 
     # Ajouter l'outil de calendrier si nécessaire
     if has_calendar:
         agent_code += '''
-def book_appointment(name: str, email: str, date: str, time: str, 
+# ─── Calendrier ─────────────────────────────────────────────────────────────
+
+def book_appointment(name: str, email: str, date: str, time: str,
                      service: str = "", notes: str = "") -> str:
-    \"\"\"Créer un rendez-vous via Cal.com API.\"\"\"
+    """Créer un rendez-vous via Cal.com API."""
+    import requests
+
     cal_api_key = os.getenv("CAL_COM_API_KEY", "")
     cal_event_type_id = os.getenv("CAL_COM_EVENT_TYPE_ID", "")
-    
+
     if not cal_api_key:
         return "Le système de rendez-vous n'est pas encore configuré. Un membre de l'équipe vous contactera."
-    
+
     try:
-        from datetime import datetime
-        start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
-        
+        from datetime import datetime as dt
+        start_dt = dt.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+
         resp = requests.post(
             "https://api.cal.com/v1/bookings",
             headers={"Authorization": f"Bearer {cal_api_key}"},
-            json={{
+            json={
                 "eventTypeId": int(cal_event_type_id),
                 "start": start_dt.isoformat(),
-                "responses": {{"name": name, "email": email, "notes": notes}},
-                "metadata": {{"service": service, "source": "chatbot"}},
-            }},
+                "responses": {"name": name, "email": email, "notes": notes},
+                "metadata": {"service": service, "source": "chatbot"},
+            },
             timeout=15,
         )
-        
+
         if resp.status_code in (200, 201):
-            # Envoyer confirmation par courriel
-            send_confirmation_email(email, name, date, time, service)
-            return f"✅ Rendez-vous confirmé pour {{name}} le {{date}} à {{time}}. Un courriel de confirmation a été envoyé."
+            return f"✅ Rendez-vous confirmé pour {name} le {date} à {time}."
         else:
-            return "⚠️ Il y a eu un problème lors de la prise de rendez-vous. Un membre de l'équipe vous contactera."
+            return "⚠️ Il y a eu un problème. Un membre de l'équipe vous contactera."
     except Exception as e:
-        logger.error(f"Erreur book_appointment: {{e}}")
+        logger.error(f"Erreur book_appointment: {e}")
         return "⚠️ Impossible de prendre le rendez-vous en ce moment. Veuillez nous appeler directement."
-
-
-def send_confirmation_email(to_email: str, name: str, date: str, time: str, service: str):
-    \"\"\"Envoyer un courriel de confirmation via Resend.\"\"\"
-    resend_key = os.getenv("RESEND_API_KEY", "")
-    if not resend_key:
-        return
-    
-    try:
-        requests.post(
-            "https://api.resend.com/emails",
-            headers={{"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"}},
-            json={{
-                "from": os.getenv("EMAIL_FROM", "noreply@chatbotfactory.xyz"),
-                "to": to_email,
-                "subject": f"Confirmation de rendez-vous - {{date}} à {{time}}",
-                "html": f"<p>Bonjour {{name}},</p><p>Votre rendez-vous est confirmé pour <strong>{{date}} à {{time}}</strong>.</p>{{'<p>Service: ' + service + '</p>' if service else ''}}<p>À bientôt!</p>",
-            }},
-            timeout=10,
-        )
-    except Exception as e:
-        logger.error(f"Erreur envoi courriel: {{e}}")
-
 '''
 
     # Ajouter l'outil CRM si nécessaire
@@ -539,29 +568,34 @@ def send_confirmation_email(to_email: str, name: str, date: str, time: str, serv
         crm_name = client_data["integrations"].get("crm", "").lower()
         if "hubspot" in crm_name:
             agent_code += '''
-def create_crm_contact(name: str, email: str, phone: str = "", notes: str = "") -> str:
-    \"\"\"Créer un contact dans HubSpot.\"\"\"
+# ─── CRM (HubSpot) ──────────────────────────────────────────────────────────
+
+def create_crm_contact(name: str, email: str, phone: str = "", notes: str = ""):
+    """Créer un contact dans HubSpot."""
+    import requests
+
     hubspot_key = os.getenv("HUBSPOT_API_KEY", "")
     if not hubspot_key:
-        return ""
-    
+        return
+
     try:
         requests.post(
             "https://api.hubapi.com/crm/v3/objects/contacts",
-            headers={{"Authorization": f"Bearer {hubspot_key}", "Content-Type": "application/json"}},
-            json={{"properties": {{"email": email, "firstname": name, "phone": phone, "notes": notes}}}},
+            headers={"Authorization": f"Bearer {hubspot_key}", "Content-Type": "application/json"},
+            json={"properties": {"email": email, "firstname": name, "phone": phone, "notes": notes}},
             timeout=10,
         )
-        logger.info(f"✅ Contact HubSpot créé: {{email}}")
+        logger.info(f"✅ Contact HubSpot créé: {email}")
     except Exception as e:
-        logger.error(f"Erreur HubSpot: {{e}}")
+        logger.error(f"Erreur HubSpot: {e}")
 '''
         else:
             agent_code += f'''
-def create_crm_contact(name: str, email: str, phone: str = "", notes: str = "") -> str:
-    \"\"\"Créer un contact dans le CRM ({client_data["integrations"].get("crm", "non configuré")}).\"\"\"
-    # TODO: Implémenter l'intégration CRM spécifique
-    logger.info(f"CRM contact: {{name}} ({{email}}) - INTÉGRATION À COMPLÉTER")
+# ─── CRM ────────────────────────────────────────────────────────────────────
+
+def create_crm_contact(name: str, email: str, phone: str = "", notes: str = ""):
+    """Créer un contact dans le CRM ({client_data["integrations"].get("crm", "non configuré")})."""
+    logger.info(f"CRM contact: {name} ({email}) - INTÉGRATION À COMPLÉTER")
 '''
 
     # ── FastAPI App ─────────────────────────────────────────────────────────
@@ -569,7 +603,7 @@ def create_crm_contact(name: str, email: str, phone: str = "", notes: str = "") 
 
 # ─── FastAPI Application ────────────────────────────────────────────────────
 
-app = FastAPI(title="Agent — {client_data["metadata"].get("company_name", "Client")}")
+app = FastAPI(title="Agent — {company_name}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -577,8 +611,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Stockage en mémoire des sessions (remplacer par Redis en production)
-sessions: dict[str, ChatMessageHistory] = {{}}
+sessions = {{}}
 
 
 class ChatRequest(BaseModel):
@@ -592,50 +625,64 @@ class ChatResponse(BaseModel):
     transferred: bool = False
 
 
+def search_knowledge(query):
+    """Recherche simple dans la base de connaissances."""
+    if not knowledge_docs:
+        return ""
+
+    query_lower = query.lower()
+    results = []
+
+    for doc in knowledge_docs:
+        content = doc.get("content", "").lower()
+        title = doc.get("title", "").lower()
+        score = sum(1 for word in query_lower.split() if word in content or word in title)
+        if score > 0:
+            results.append((score, doc["content"]))
+
+    results.sort(reverse=True, key=lambda x: x[0])
+
+    if results:
+        return "\\n\\n".join(r[1] for r in results[:3])
+    return ""
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    \"\"\"Endpoint principal de conversation.\"\"\"
     session_id = request.session_id
-    
-    # Récupérer ou créer la session
+
     if session_id not in sessions:
-        sessions[session_id] = ChatMessageHistory()
-    
+        sessions[session_id] = []
+
     chat_history = sessions[session_id]
-    
+
     # Rechercher dans la base de connaissances
-    docs = retriever.get_relevant_documents(request.message)
-    context = "\\n\\n".join(doc.page_content for doc in docs)
-    
-    # Construire le message système avec le contexte
-    messages = [SystemMessage(content=SYSTEM_PROMPT)]
-    
+    context = search_knowledge(request.message)
+
+    # Construire les messages
+    messages = [{{"role": "system", "content": SYSTEM_PROMPT}}]
+
     if context:
-        messages.append(SystemMessage(
-            content=f"## Informations pertinentes de la base de connaissances:\\n\\n{{context}}"
-        ))
-    
-    # Ajouter l'historique (max 10 derniers messages pour limiter les tokens)
-    for msg in chat_history.messages[-10:]:
+        messages.append({{"role": "system", "content": f"Informations pertinentes:\\n\\n{{context}}"}})
+
+    for msg in chat_history[-10:]:
         messages.append(msg)
-    
-    messages.append(HumanMessage(content=request.message))
-    
+
+    messages.append({{"role": "user", "content": request.message}})
+
     # Appeler le LLM
-    result = llm.invoke(messages)
-    response_text = result.content
-    
-    # Sauvegarder dans l'historique
-    chat_history.add_user_message(request.message)
-    chat_history.add_ai_message(response_text)
-    
-    # Détecter si un transfert humain est nécessaire
-    transfer_keywords = ["transférer", "humain", "parler à quelqu'un", "transfer", "human", "agent"]
+    response_text = call_llm(messages)
+
+    chat_history.append({{"role": "user", "content": request.message}})
+    chat_history.append({{"role": "assistant", "content": response_text}})
+    sessions[session_id] = chat_history[-20:]
+
+    transfer_keywords = ["transférer", "humain", "parler à quelqu'un", "transfer", "human"]
     transferred = any(kw in response_text.lower() for kw in transfer_keywords)
-    
+
     # Journaliser (non-bloquant)
-    log_conversation(session_id, request.message, response_text, transferred=transferred)
-    
+    log_conversation(session_id, request.message, response_text, transferred)
+
     return ChatResponse(
         response=response_text,
         session_id=session_id,
@@ -645,12 +692,18 @@ async def chat(request: ChatRequest):
 
 @app.get("/health")
 async def health():
-    return {{"status": "ok", "agent": "{client_data["metadata'].get('company_name', 'Client')}", "docs": vectorstore._collection.count()}}
+    return {{
+        "status": "ok",
+        "agent": "{company_name}",
+        "timestamp": datetime.now().isoformat(),
+        "docs": len(knowledge_docs),
+    }}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 '''
 
     # Écrire le fichier
@@ -947,7 +1000,7 @@ def slugify(text: str) -> str:
     text = re.sub(r"[èéêë]", "e", text)
     text = re.sub(r"[ìíîï]", "i", text)
     text = re.sub(r"[òóôõö]", "o", text)
-    text = re.sub(r"[ùúûü]", "u", text")
+    text = re.sub(r"[ùúûü]", "u", text)
     text = re.sub(r"[^a-z0-9\s-]", "", text)
     text = re.sub(r"[\s]+", "-", text)
     text = re.sub(r"-+", "-", text)
