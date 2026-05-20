@@ -68,7 +68,7 @@ def call_llm(messages):
     
     if LLM_BACKEND == "openrouter":
         api_key = os.getenv("OPENROUTER_API_KEY", "")
-        model = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash:free")
+        model = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
         url = "https://openrouter.ai/api/v1/chat/completions"
     elif LLM_BACKEND == "groq":
         api_key = os.getenv("GROQ_API_KEY", "")
