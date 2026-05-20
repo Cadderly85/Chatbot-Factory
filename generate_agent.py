@@ -758,17 +758,11 @@ EMAIL_FROM=@{company_slug}.com
 HUBSPOT_API_KEY=
 """
 
-    # requirements.txt
+    # requirements.txt — version allégée pour Render
     requirements = """fastapi>=0.110
 uvicorn>=0.29
 pydantic>=2.0
 python-dotenv>=1.0
-langchain>=0.2
-langchain-community>=0.2
-langchain-groq>=0.1
-langchain-openai>=0.1
-chromadb>=0.5
-sentence-transformers>=3.0
 gspread>=6.0
 google-auth>=2.0
 requests>=2.31
@@ -816,7 +810,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN python build_knowledge_base.py
 
 EXPOSE 8000
 CMD ["python", "agent.py"]
@@ -1075,9 +1068,9 @@ def main():
     logger.info("Prochaines étapes :")
     logger.info(f"  1. cd {output_dir}")
     logger.info("  2. Copier .env.example → .env et remplir les clés API")
-    logger.info("  3. python build_knowledge_base.py")
-    logger.info("  4. python agent.py")
-    logger.info("  5. python test_agent.py")
+    logger.info("  3. python agent.py")
+    logger.info("  4. python test_agent.py")
+    logger.info("  5. Déployer sur Render (push sur GitHub + webhook)")
     logger.info("=" * 50)
 
 
