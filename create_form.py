@@ -28,43 +28,65 @@ logger = logging.getLogger("create_form")
 
 
 def get_google_creds():
-    """Obtient les credentials Google via OAuth2."""
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    """Obtient les credentials Google via Service Account (pas de navigateur)."""
+    from google.oauth2.service_account import Credentials
 
     SCOPES = [
         "https://www.googleapis.com/auth/forms.body",
         "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/spreadsheets",
     ]
 
-    creds = None
-    token_file = "form_token.json"
-
-    if os.path.exists(token_file):
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_file, "w") as f:
-            f.write(creds.to_json())
-
+    creds_path = os.getenv("GOOGLE_CREDENTIALS", "credentials.json")
+    creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+    logger.info(f"✅ Credentials chargées : {creds.service_account_email}")
     return creds
 
 
 def create_form(title: str, spreadsheet_id: str = None) -> dict:
     """
     Crée le formulaire d'onboarding complet.
-    Retourne l'ID du form et l'URL.
+    Crée automatiquement un Google Sheet pour stocker les réponses.
+    Retourne l'ID du form, l'URL, et l'ID du Sheet.
     """
     from googleapiclient.discovery import build
 
     creds = get_google_creds()
-    service = build("forms", "v1", credentials=creds)
+    forms_service = build("forms", "v1", credentials=creds)
+    sheets_service = build("sheets", "v4", credentials=creds)
+    drive_service = build("drive", "v3", credentials=creds)
+
+    # ─── Créer le Sheet d'abord ────────────────────────────────────────────
+    if not spreadsheet_id:
+        sheet_title = f"Réponses — {title}"
+        spreadsheet = sheets_service.spreadsheets().create(body={
+            "properties": {"title": sheet_title},
+            "sheets": [{
+                "properties": {
+                    "title": "Réponses",
+                    "gridProperties": {"frozenRowCount": 1}
+                }
+            }]
+        }).execute()
+        spreadsheet_id = spreadsheet["spreadsheetId"]
+        sheet_url = spreadsheet["spreadsheetUrl"]
+        logger.info(f"✅ Google Sheet créé : {sheet_url}")
+
+        # Ajouter les en-têtes
+        sheets_service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range="Réponses!A1:F1",
+            valueInputOption="RAW",
+            body={"values": [["Timestamp", "Session ID", "Message", "Réponse", "Transféré", "Lead Info"]]}
+        ).execute()
+
+        # Donner les droits au service account
+        drive_service.permissions().create(
+            fileId=spreadsheet_id,
+            body={"type": "user", "role": "writer", "emailAddress": creds.service_account_email},
+        ).execute()
+    else:
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
 
     # ─── Créer le form ──────────────────────────────────────────────────
     form = {
@@ -79,7 +101,7 @@ def create_form(title: str, spreadsheet_id: str = None) -> dict:
         }
     }
 
-    result = service.forms().create(body=form).execute()
+    result = forms_service.forms().create(body=form).execute()
     form_id = result["formId"]
     form_url = result["responderUri"]
     logger.info(f"✅ Formulaire créé : {form_url}")
@@ -98,19 +120,24 @@ def create_form(title: str, spreadsheet_id: str = None) -> dict:
                 }
             ]
         }
-        service.forms().batchUpdate(formId=form_id, body=batch).execute()
+        forms_service.forms().batchUpdate(formId=form_id, body=batch).execute()
 
     logger.info(f"✅ {len(questions)} questions ajoutées")
 
-    # ─── Lier à Google Sheets (optionnel) ──────────────────────────────
-    if spreadsheet_id:
-        logger.info(f"📊 Lien avec Google Sheet : {spreadsheet_id}")
-        # Note: Le lien Sheets se fait manuellement via le bouton "Réponses" → "Créer une feuille de calcul"
-        # Ou via l'API Drive pour créer un Spreadsheet et le lier
+    # ─── Lier le form au Sheet ──────────────────────────────────────────
+    # Note: L'API Forms ne permet pas de lier directement à un Sheet.
+    # Il faut utiliser l'interface manuelle ou l'API Drive.
+    # Alternative: on configure le form pour envoyer les réponses au Sheet via un trigger.
+    logger.info(f"📊 Pour lier le form au Sheet :")
+    logger.info(f"   1. Ouvrir le form : {form_url}")
+    logger.info(f"   2. Aller dans 'Réponses' → 'Créer une feuille de calcul'")
+    logger.info(f"   3. Sélectionner le Sheet existant : {sheet_url}")
 
     return {
         "form_id": form_id,
         "form_url": form_url,
+        "spreadsheet_id": spreadsheet_id,
+        "sheet_url": sheet_url,
         "title": title,
         "questions_count": len(questions),
     }
