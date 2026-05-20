@@ -1,0 +1,27 @@
+{
+  "status": "pending_google_sheet",
+  "reason": "Google Drive storage quota exceeded (15GB free tier)",
+  "service_account": "chatbot-factory-bot@web-factory-496023.iam.gserviceaccount.com",
+  "credentials_file": "~/.hermes/chatbot-factory/credentials.json",
+  "client_data": {
+    "company_name": "Clinique Dentaire Sourire",
+    "industry": "Santé / Clinique médicale / Dentaire",
+    "address": "1234 Rue Saint-Jean, Montréal, QC H2X 1Y5",
+    "phone": "(514) 555-0123",
+    "email": "info@cliniquesourire.ca",
+    "website": "https://cliniquesourire.ca",
+    "services": [
+      "Nettoyage dentaire",
+      "Blanchiment",
+      "Orthodontie",
+      "Implants",
+      "Urgences",
+      "Esthétique"
+    ]
+  },
+  "next_steps": [
+    "Libérer de l'espace Google Drive OU utiliser un autre compte Google",
+    "Relancer la création du Google Sheet",
+    "Tester le pipeline generate_agent.py"
+  ]
+}

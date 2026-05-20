@@ -1,0 +1,7 @@
+{
+  "_comment": "Configuration des clients Chatbot Factory",
+  "_format": "nom_client: google_spreadsheet_id",
+  "_instructions": "Pour chaque client, créer un Google Sheet avec deux onglets : 'Conversations' et 'Leads'. Ajouter l'ID du Sheet ci-dessous.",
+
+  "_exemple_client": "1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4"
+}

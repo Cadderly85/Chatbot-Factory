@@ -1,0 +1,69 @@
+# Google Sheet — Client Test : Clinique Dentaire Sourire
+# ═══════════════════════════════════════════════════════════════
+# INSTRUCTIONS :
+#   1. Créer un nouveau Google Sheet
+#   2. Nommer l'onglet "Réponses"
+#   3. Copier-coller le contenu ci-dessous (à partir de la ligne 3)
+#   4. Partager le Sheet avec ton email
+#   5. Noter l'ID du Sheet (dans l'URL)
+#
+# L'URL ressemble à :
+#   https://docs.google.com/spreadsheets/d/ICI_L_ID_DU_SHEET/edit
+#                     ^^^^^^^^^^^^^^^^^^^^^^^^
+#                     C'est ça l'ID
+# ═══════════════════════════════════════════════════════════════
+
+Question	Réponse
+Quel est le nom de votre entreprise?	Clinique Dentaire Sourire
+Dans quel secteur d'activité œuvrez-vous?	Santé / Clinique médicale / Dentaire
+Quel est l'adresse de votre/vos succursale(s)?	1234 Rue Saint-Jean, Montréal, QC H2X 1Y5
+Quel est votre numéro de téléphone principal?	(514) 555-0123
+Quel est votre courriel de contact?	info@cliniquesourire.ca
+Quel est l'URL de votre site web?	https://cliniquesourire.ca
+Quel est votre principal point de friction avec vos clients en ce moment?	Trop d'appels répétitifs (mêmes questions), Perte de clients en dehors des heures d'ouverture
+Quel pourcentage de vos demandes sont des questions récurrentes?	50-75%
+Quel est l'objectif PRINCIPAL de votre agent conversationnel?	Répondre aux FAQ (questions fréquentes), Prendre des rendez-vous, Qualifier des leads
+Avez-vous des pics saisonniers ou horaires où votre équipe est submergée?	Les lundis matins et les mercredis après-midi sont les plus achalandés. Pics en janvier (retour des Fêtes) et en août (rentrée scolaire).
+Listez vos services ou produits principaux (un par ligne)	Nettoyage dentaire et examen complet
+Blanchiment dentaire
+Orthodontie (broches et Invisalign)
+Implants dentaires
+Soins d'urgence dentaire
+Dentisterie esthétique (facettes, couronnes)
+Traitement de canal
+Chirurgie buccale
+Avez-vous des prix ou forfaits standardisés?	Nettoyage + examen : 150$-250$
+Blanchiment : 400$-600$
+Consultation initiale : gratuite
+Invisalign : 3000$-7000$
+Implant : 2500$-5000$
+Avez-vous une FAQ existante?	Oui, une FAQ sur notre site web
+Quelles sont les 5 questions les plus fréquentes que vous recevez?	Quels sont vos horaires?
+Acceptez-vous de nouveaux patients?
+Est-ce que vous acceptez mon assurance?
+Combien coûte un nettoyage?
+Offrez-vous des services d'urgence?
+Pour chaque question ci-dessus, quelle est votre réponse idéale?	Horaires : Lundi au vendredi 8h-18h, Samedi 9h-14h
+Nouveaux patients : Oui, toujours! Consultation initiale gratuite.
+Assurance : Oui, nous acceptons la plupart des assurances. Remboursement direct.
+Nettoyage : Entre 150$ et 250$ selon les besoins.
+Urgence : Oui, appelez le (514) 555-0123 et nous vous verrons le jour même.
+Sur quels canaux vos clients vous contactent-ils actuellement?	Téléphone, Courriel, Site web (formulaire de contact), Facebook / Messenger
+Sur quel(s) canal(s) souhaitez-vous déployer l'agent conversationnel?	Site web (widget de chat), Facebook Messenger
+Utilisez-vous un CRM?	Non, je n'utilise pas de CRM
+Utilisez-vous un système de prise de rendez-vous en ligne?	Calendly
+Sur quelle plateforme est construit votre site web?	WordPress
+Avez-vous des exigences de conformité spécifiques?	Loi 25 (Québec) — consentement requis pour collecter des données personnelles
+Comment décririez-vous le ton de votre entreprise?	Chaleureux et accessible
+Votre clientèle est-elle bilingue français/anglais?	Oui, bilingue FR/EN
+Quels sont les valeurs ou mots-clés que l'agent doit refléter?	Bienveillance, expertise, confort, confiance, sourire
+Y a-t-il des sujets que l'agent ne doit JAMAIS aborder?	Ne jamais donner de diagnostic médical. Ne jamais recommander un traitement spécifique.
+Dans quelles situations l'agent devrait-il transférer à un humain?	Demande de diagnostic, plainte ou urgence dentaire, demande de prix exact pour un traitement complexe
+Quels sont vos horaires d'ouverture?	Lundi au vendredi : 8h00 - 18h00
+Samedi : 9h00 - 14h00
+Dimanche : Fermé
+Avez-vous des politiques spécifiques?	Politique d'annulation : 24h d'avance requis, sinon 50$ de frais
+Y a-t-il autre chose que nous devrions savoir?	Nous avons 3 dentistes dans l'équipe : Dr. Marie Tremblay, Dr. Jean-Pierre Gagnon, Dr. Sarah Chen
+Qui sera la personne responsable du suivi?	Marie Tremblay (propriétaire)
+Quel est le meilleur moyen de vous contacter pour le suivi?	Courriel
+Quel est votre budget approximatif pour ce projet?	2 500$ - 5 000$

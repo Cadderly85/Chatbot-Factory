@@ -1,0 +1,35 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Chatbot Factory — Configuration Render
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ce fichier est un fallback. Le déploiement principal se fait via le
+# dashboard Render en sélectionnant "Python" comme environnement.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  - type: web
+    name: chatbot-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && python build_knowledge_base.py
+    startCommand: python agent.py
+    envVars:
+      - key: LLM_BACKEND
+        value: ollama
+      - key: OLLAMA_HOST
+        value: http://localhost:11434
+      - key: OLLAMA_MODEL
+        value: llama3.1:8b
+      - key: GOOGLE_CREDENTIALS
+        sync: false
+      - key: SPREADSHEET_ID
+        sync: false
+      - key: CAL_COM_API_KEY
+        sync: false
+      - key: CAL_COM_EVENT_TYPE_ID
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: noreply@chatbotfactory.xyz
+      - key: HUBSPOT_API_KEY
+        sync: false

@@ -1,0 +1,18 @@
+# Credentials and secrets
+credentials.json
+*.json
+.env
+google_token.json
+
+# Generated agents (pushed separately)
+generated_agents/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
