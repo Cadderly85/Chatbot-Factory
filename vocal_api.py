@@ -19,6 +19,7 @@ import io
 import json
 import base64
 import logging
+import traceback
 import tempfile
 import asyncio
 from pathlib import Path
@@ -26,11 +27,14 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, Form, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-load_dotenv()
+ENV_FILE = Path(__file__).with_name(".env.vocal")
+if not ENV_FILE.exists():
+    ENV_FILE = Path(__file__).with_name(".env")
+load_dotenv(ENV_FILE)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vocal_api")
 
@@ -39,15 +43,29 @@ logger = logging.getLogger("vocal_api")
 LLM_BACKEND = os.getenv("LLM_BACKEND", "openrouter")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 TTS_VOICE_FR = os.getenv("TTS_VOICE_FR", "fr-FR-HenriNeural")
 TTS_VOICE_EN = os.getenv("TTS_VOICE_EN", "en-US-GuyNeural")
 PORT = int(os.getenv("PORT", 8001))
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+if not ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS = ["*"]
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Chatbot Factory — Vocal API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ─── Whisper (lazy loading) ───────────────────────────────────────────────────
 
@@ -73,6 +91,11 @@ async def health():
     return {"status": "ok", "service": "vocal_api", "timestamp": datetime.now().isoformat()}
 
 
+@app.get("/")
+async def root():
+    return PlainTextResponse("Chatbot Factory vocal API is running. Try /vocal/health")
+
+
 @app.post("/vocal/transcribe-and-respond")
 async def transcribe_and_respond(
     audio: UploadFile = File(...),
@@ -83,21 +106,22 @@ async def transcribe_and_respond(
     Reçoit un fichier audio, transcrit avec Whisper,
     fait répondre le LLM, et renvoie la réponse texte + audio.
     """
-    logger.info(f"Recu: {audio.filename} ({audio.size} bytes), langue: {language}")
+    logger.info(f"Recu: {audio.filename}, langue: {language}")
 
-    # 1. Sauvegarder l'audio
-    audio_data = await audio.read()
-    suffix = ".webm"
-    if audio.filename and audio.filename.endswith(".wav"):
-        suffix = ".wav"
-    elif audio.filename and audio.filename.endswith(".mp3"):
-        suffix = ".mp3"
-
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-        f.write(audio_data)
-        audio_path = f.name
-
+    audio_path = None
     try:
+        # 1. Sauvegarder l'audio
+        audio_data = await audio.read()
+        suffix = ".webm"
+        if audio.filename and audio.filename.endswith(".wav"):
+            suffix = ".wav"
+        elif audio.filename and audio.filename.endswith(".mp3"):
+            suffix = ".mp3"
+
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            f.write(audio_data)
+            audio_path = f.name
+
         # 2. Transcrire avec Whisper
         model = get_whisper_model()
         lang = "fr" if language.startswith("fr") else "en"
@@ -143,8 +167,12 @@ async def transcribe_and_respond(
             "language": lang,
         })
 
+    except Exception as e:
+        logger.error("Erreur dans /vocal/transcribe-and-respond\n%s", traceback.format_exc())
+        return JSONResponse(status_code=500, content={"detail": str(e), "type": e.__class__.__name__})
     finally:
-        os.unlink(audio_path)
+        if audio_path and os.path.exists(audio_path):
+            os.unlink(audio_path)
 
 
 @app.websocket("/vocal/ws")
@@ -205,7 +233,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
 
             finally:
-                os.unlink(temp_path)
+                if 'temp_path' in locals() and os.path.exists(temp_path):
+                    os.unlink(temp_path)
 
     except WebSocketDisconnect:
         logger.info("WebSocket déconnecté")
@@ -218,56 +247,77 @@ async def websocket_endpoint(websocket: WebSocket):
 
 def get_system_prompt(language: str) -> str:
     if language == "fr":
-        return """Tu es l'assistant vocal d'une entreprise. Tu réponds au téléphone de façon naturelle.
+        return """Tu es l'assistant vocal d'une clinique dentaire. Tu réponds comme une vraie personne au téléphone.
 
-Regles:
-- Sois CONCIS: 2-3 phrases maximum
-- Parle de façon NATURELLE et CHALEUREUSE
-- Si tu ne sais pas, propose de transferer a un humain
-- Reponds en FRANCAIS
-- Ne donne jamais de diagnostic medical
+Règles:
+- Réponses TRÈS COURTES: 1 à 2 phrases maximum
+- Ton chaleureux, naturel et professionnel
+- Si la demande est floue, pose UNE question simple
+- Si tu ne sais pas, propose de transférer à un humain
+- Ne donne jamais de diagnostic médical
+- Réponds en français clair et simple
+- Parle comme un assistant de clinique, pas comme un robot
 
-Tu es un assistant professionnel et sympathique."""
+Tu aides surtout pour: rendez-vous, horaires, services, coordonnées, et orientation."""
     else:
-        return """You are a voice assistant for a business. You answer the phone naturally.
+        return """You are the voice assistant for a dental clinic. Speak like a real person on the phone.
 
 Rules:
-- Be CONCISE: 2-3 sentences maximum
-- Speak in a NATURAL and WARM way
-- If you don't know, suggest transferring to a human
-- Answer in ENGLISH
+- VERY SHORT answers: 1 to 2 sentences maximum
+- Warm, natural, professional tone
+- If the request is unclear, ask ONE simple question
+- If you don't know, offer to transfer to a human
 - Never give medical diagnoses
+- Answer in clear, simple English
+- Sound like a clinic assistant, not a robot
 
-You are a professional and friendly assistant."""
+You mainly help with appointments, opening hours, services, contact info, and routing."""
 
 
 def call_llm(messages: list[dict], language: str = "fr") -> str:
     import urllib.request
 
-    if LLM_BACKEND == "openrouter":
+    backend = (LLM_BACKEND or "").strip().lower()
+    if backend == "auto":
+        backend = "openai" if OPENAI_API_KEY else "openrouter"
+
+    if backend == "openrouter":
         api_key = OPENROUTER_API_KEY
         model = OPENROUTER_MODEL
         url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+    elif backend == "openai":
+        api_key = OPENAI_API_KEY
+        model = OPENAI_MODEL
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
     else:
         if language == "fr":
             return "Bonjour ! Je suis votre assistant. Comment puis-je vous aider ?"
-        else:
-            return "Hello! I'm your assistant. How can I help you?"
+        return "Hello! I'm your assistant. How can I help you?"
 
     if not api_key:
-        return "⚠️ Clé API non configurée."
+        if language == "fr":
+            return "⚠️ Clé API non configurée pour le backend LLM choisi."
+        return "⚠️ The API key is missing for the selected LLM backend."
 
-    payload = json.dumps({
+    payload_dict = {
         "model": model,
         "messages": messages,
-        "max_tokens": 200,
         "temperature": 0.7,
-    }).encode()
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
     }
+    if backend == "openai":
+        payload_dict["max_completion_tokens"] = 200
+    else:
+        payload_dict["max_tokens"] = 200
+
+    payload = json.dumps(payload_dict).encode()
 
     req = urllib.request.Request(url, data=payload, headers=headers)
 
@@ -276,10 +326,21 @@ def call_llm(messages: list[dict], language: str = "fr") -> str:
             result = json.loads(response.read().decode())
             return result["choices"][0]["message"]["content"]
     except Exception as e:
-        logger.error(f"Erreur LLM: {e}")
+        body_text = ""
+        status = getattr(e, "code", None)
+        if hasattr(e, "read"):
+            try:
+                body_text = e.read().decode(errors="replace")
+            except Exception:
+                body_text = ""
+        logger.error(f"Erreur LLM: status={status} err={e} body={body_text}")
         if language == "fr":
+            if body_text:
+                return f"Désolé, erreur LLM: {body_text}"
             return "Désolé, une erreur s'est produite. Veuillez réessayer."
         else:
+            if body_text:
+                return f"Sorry, LLM error: {body_text}"
             return "Sorry, an error occurred. Please try again."
 
 

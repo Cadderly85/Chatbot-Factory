@@ -12,7 +12,7 @@
  * 
  * Usage:
  *   <script src="https://cdn.chatbotfactory.xyz/vocal-widget.js"></script>
- *   <div id="chatbot-vocal" data-agent-url="https://agent.onrender.com"></div>
+ *   <div id="chatbot-vocal" data-vocal-api-url="https://brand-automobiles-aluminium-dominant.trycloudflare.com"></div>
  */
 
 (function() {
@@ -20,9 +20,21 @@
 
     // ─── Configuration ─────────────────────────────────────────────────────────
 
+    function getApiBaseUrl() {
+        const container = document.getElementById('chatbot-vocal');
+        const rawUrl =
+            container?.dataset?.vocalApiUrl ||
+            container?.dataset?.agentUrl ||
+            window.location.origin;
+
+        return rawUrl.replace(/\/+$/, '');
+    }
+
+    const API_BASE_URL = getApiBaseUrl();
+
     const CONFIG = {
-        serverUrl: (document.querySelector('#chatbot-vocal')?.dataset?.agentUrl || '') + '/vocal',
-        wsUrl: (document.querySelector('#chatbot-vocal')?.dataset?.agentUrl || '') + '/vocal/ws',
+        serverUrl: `${API_BASE_URL}/vocal`,
+        wsUrl: API_BASE_URL.replace(/^http(s?):/, 'ws$1:') + '/vocal/ws',
         language: 'fr-FR',
         maxRecordingSeconds: 60,
         silenceThreshold: 0.01,
@@ -39,6 +51,7 @@
     let analyser = null;
     let silenceTimer = null;
     let stream = null;
+    let pendingStopResolve = null;
 
     // ─── Interface ─────────────────────────────────────────────────────────────
 
@@ -54,17 +67,18 @@
                 <div class="cf-vocal-header">
                     <span class="cf-vocal-title">🎤 Assistant Vocal</span>
                     <span class="cf-vocal-status" id="cf-status">Prêt</span>
+                    <span id="cf-playing-indicator" class="cf-playing-indicator" style="display:none" title="Lecture">🔊</span>
                 </div>
                 <div class="cf-vocal-messages" id="cf-messages"></div>
                 <div class="cf-vocal-controls">
                     <button class="cf-vocal-btn cf-vocal-record" id="cf-record-btn" title="Commencer l'enregistrement">
                         🎤
                     </button>
+                    <button class="cf-vocal-btn cf-vocal-perms" id="cf-permissions-btn" title="Vérifier les permissions">
+                        🔁
+                    </button>
                     <button class="cf-vocal-btn cf-vocal-stop" id="cf-stop-btn" title="Arrêter l'enregistrement" style="display:none">
                         ⏹️
-                    </button>
-                    <button class="cf-vocal-btn cf-vocal-send" id="cf-send-btn" title="Envoyer" style="display:none">
-                        📤
                     </button>
                 </div>
                 <div class="cf-vocal-visualizer" id="cf-visualizer"></div>
@@ -83,15 +97,15 @@
         styles.textContent = `
             .cf-vocal-widget {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                max-width: 400px;
+                max-width: 520px;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border-radius: 16px;
-                padding: 16px;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+                border-radius: 18px;
+                padding: 20px;
+                box-shadow: 0 12px 48px rgba(0,0,0,0.28);
                 color: white;
                 position: fixed;
-                bottom: 20px;
-                right: 20px;
+                bottom: 24px;
+                right: 24px;
                 z-index: 10000;
             }
             .cf-vocal-header {
@@ -136,22 +150,25 @@
                 border-radius: 8px;
             }
             .cf-vocal-message {
-                margin-bottom: 8px;
-                padding: 8px 12px;
-                border-radius: 12px;
-                font-size: 13px;
-                line-height: 1.4;
+                margin-bottom: 10px;
+                padding: 10px 14px;
+                border-radius: 14px;
+                font-size: 15px;
+                line-height: 1.45;
             }
             .cf-vocal-message.user {
-                background: rgba(255,255,255,0.2);
+                background: rgba(255,255,255,0.12);
                 margin-left: 20px;
-                border-bottom-right-radius: 4px;
+                border-bottom-right-radius: 6px;
+                color: #fff;
             }
             .cf-vocal-message.bot {
-                background: rgba(255,255,255,0.9);
-                color: #333;
+                background: rgba(255,255,255,0.98);
+                color: #3a0f5a; /* deep purple text */
                 margin-right: 20px;
-                border-bottom-left-radius: 4px;
+                border-bottom-left-radius: 6px;
+                font-weight: 600;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.08);
             }
             .cf-vocal-message.error {
                 background: #ff4444;
@@ -164,25 +181,27 @@
                 margin-bottom: 8px;
             }
             .cf-vocal-btn {
-                width: 56px;
-                height: 56px;
+                width: 68px;
+                height: 68px;
                 border-radius: 50%;
                 border: none;
-                font-size: 24px;
+                font-size: 28px;
                 cursor: pointer;
-                transition: all 0.2s;
+                transition: transform 0.12s ease, box-shadow 0.12s ease;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                user-select: none;
             }
             .cf-vocal-record {
-                background: #ff4444;
+                background: linear-gradient(180deg, #ff6b6b 0%, #ff3b5a 60%);
                 color: white;
-                box-shadow: 0 4px 12px rgba(255,68,68,0.4);
+                box-shadow: 0 12px 30px rgba(255,59,90,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+                border: 1px solid rgba(255,255,255,0.06);
             }
             .cf-vocal-record:hover {
-                background: #ff6666;
-                transform: scale(1.05);
+                transform: translateY(-2px) scale(1.03);
+                box-shadow: 0 16px 36px rgba(255,59,90,0.34), inset 0 1px 0 rgba(255,255,255,0.22);
             }
             .cf-vocal-record.recording {
                 animation: cf-pulse-btn 1s infinite;
@@ -199,12 +218,35 @@
                 background: #00cc66;
                 color: white;
             }
+            .cf-vocal-perms {
+                background: linear-gradient(180deg, #ffd166 0%, #ffb703 60%);
+                color: #2b1b3a;
+                box-shadow: 0 8px 20px rgba(255,183,3,0.18);
+            }
             .cf-vocal-visualizer {
                 height: 32px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 gap: 2px;
+            }
+
+            .cf-playing-indicator {
+                margin-left: 8px;
+                font-size: 16px;
+                opacity: 0.0;
+                transform-origin: center;
+                transition: opacity 0.18s ease, transform 0.18s ease;
+            }
+            .cf-playing-indicator.visible {
+                opacity: 1.0;
+                transform: scale(1.05);
+                animation: cf-playing-pulse 1.2s infinite ease-in-out;
+            }
+            @keyframes cf-playing-pulse {
+                0% { transform: scale(1); opacity: 0.9; }
+                50% { transform: scale(1.15); opacity: 1; }
+                100% { transform: scale(1); opacity: 0.9; }
             }
             .cf-vocal-bar {
                 width: 3px;
@@ -219,7 +261,8 @@
     function attachEvents() {
         document.getElementById('cf-record-btn').addEventListener('click', startRecording);
         document.getElementById('cf-stop-btn').addEventListener('click', stopRecording);
-        document.getElementById('cf-send-btn').addEventListener('click', sendRecording);
+        const permsBtn = document.getElementById('cf-permissions-btn');
+        if (permsBtn) permsBtn.addEventListener('click', tryPermissions);
     }
 
     // ─── Enregistrement ────────────────────────────────────────────────────────
@@ -236,9 +279,21 @@
                 audioChunks.push(event.data);
             };
 
-            mediaRecorder.onstop = () => {
+            mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 displayAudioPreview(audioBlob);
+
+                // Envoi automatique après l'arrêt de l'enregistrement
+                try {
+                    await sendRecording();
+                } catch (err) {
+                    console.error('Erreur lors de l\'envoi automatique:', err);
+                }
+
+                if (pendingStopResolve) {
+                    pendingStopResolve();
+                    pendingStopResolve = null;
+                }
             };
 
             mediaRecorder.start();
@@ -254,15 +309,22 @@
         }
     }
 
-    function stopRecording() {
+    async function stopRecording() {
         if (!isRecording) return;
+
+        const stopPromise = new Promise((resolve) => {
+            pendingStopResolve = resolve;
+        });
 
         mediaRecorder.stop();
         stream.getTracks().forEach(track => track.stop());
         isRecording = false;
 
-        updateUI('recorded');
         stopVisualizer();
+        // L'envoi se fait automatiquement dans mediaRecorder.onstop()
+        updateUI('recorded');
+
+        await stopPromise;
     }
 
     function displayAudioPreview(blob) {
@@ -291,13 +353,18 @@
             formData.append('audio', audioBlob, 'recording.webm');
             formData.append('language', CONFIG.language);
 
-            const response = await fetch(CONFIG.serverUrl + '/transcribe-and-respond', {
+            const endpoint = `${CONFIG.serverUrl}/transcribe-and-respond`;
+            console.info('[vocal-widget] POST', endpoint);
+
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 body: formData,
+                mode: 'cors',
             });
 
             if (!response.ok) {
-                throw new Error(`Erreur serveur: ${response.status}`);
+                const errorText = await response.text().catch(() => '');
+                throw new Error(`Erreur serveur ${response.status}${errorText ? `: ${errorText}` : ''}`);
             }
 
             const data = await response.json();
@@ -318,28 +385,52 @@
                 playAudioBase64(data.audio_base64);
             }
 
-            updateUI('ready');
-
         } catch (err) {
             console.error('Erreur envoi:', err);
             addMessage(`❌ Erreur: ${err.message}`, 'error');
+            addMessage(`ℹ️ Endpoint: ${CONFIG.serverUrl}/transcribe-and-respond`, 'error');
+        } finally {
+            // Toujours revenir à l'état ready et vider les chunks pour éviter ré-envoi
+            audioChunks = [];
             updateUI('ready');
         }
     }
 
     // ─── Lecture audio ─────────────────────────────────────────────────────────
 
+    function _showPlayingIndicator(on = true) {
+        const el = document.getElementById('cf-playing-indicator');
+        if (!el) return;
+        if (on) el.classList.add('visible'); else el.classList.remove('visible');
+    }
+
     function playAudio(url) {
         updateUI('playing');
+        _showPlayingIndicator(true);
         const audio = new Audio(url);
-        audio.onended = () => updateUI('ready');
+        audio.onended = () => {
+            _showPlayingIndicator(false);
+            updateUI('ready');
+        };
+        audio.onerror = () => {
+            _showPlayingIndicator(false);
+            updateUI('ready');
+        };
         audio.play();
     }
 
     function playAudioBase64(base64) {
         updateUI('playing');
-        const audio = new Audio(`data:audio/mp3;base64,${base64}`);
-        audio.onended = () => updateUI('ready');
+        _showPlayingIndicator(true);
+        const audio = new Audio(`data:audio/mpeg;base64,${base64}`);
+        audio.onended = () => {
+            _showPlayingIndicator(false);
+            updateUI('ready');
+        };
+        audio.onerror = () => {
+            _showPlayingIndicator(false);
+            updateUI('ready');
+        };
         audio.play();
     }
 
@@ -349,43 +440,40 @@
         const status = document.getElementById('cf-status');
         const recordBtn = document.getElementById('cf-record-btn');
         const stopBtn = document.getElementById('cf-stop-btn');
-        const sendBtn = document.getElementById('cf-send-btn');
+        const sendBtn = document.getElementById('cf-send-btn'); // may be null
+
+        const setDisplay = (el, val) => { if (el) el.style.display = val; };
 
         switch (state) {
             case 'recording':
-                status.textContent = '🔴 Enregistrement...';
-                status.className = 'cf-vocal-status recording';
-                recordBtn.style.display = 'none';
-                stopBtn.style.display = 'flex';
-                sendBtn.style.display = 'none';
+                if (status) { status.textContent = '🔴 Enregistrement...'; status.className = 'cf-vocal-status recording'; }
+                setDisplay(recordBtn, 'none');
+                setDisplay(stopBtn, 'flex');
+                setDisplay(sendBtn, 'none');
                 break;
             case 'recorded':
-                status.textContent = '✅ Enregistré';
-                status.className = 'cf-vocal-status';
-                recordBtn.style.display = 'flex';
-                stopBtn.style.display = 'none';
-                sendBtn.style.display = 'flex';
+                if (status) { status.textContent = '✅ Enregistré'; status.className = 'cf-vocal-status'; }
+                setDisplay(recordBtn, 'flex');
+                setDisplay(stopBtn, 'none');
+                setDisplay(sendBtn, 'flex');
                 break;
             case 'processing':
-                status.textContent = '⏳ Traitement...';
-                status.className = 'cf-vocal-status processing';
-                recordBtn.style.display = 'none';
-                stopBtn.style.display = 'none';
-                sendBtn.style.display = 'none';
+                if (status) { status.textContent = '⏳ Traitement...'; status.className = 'cf-vocal-status processing'; }
+                setDisplay(recordBtn, 'none');
+                setDisplay(stopBtn, 'none');
+                setDisplay(sendBtn, 'none');
                 break;
             case 'playing':
-                status.textContent = '🔊 Lecture...';
-                status.className = 'cf-vocal-status playing';
-                recordBtn.style.display = 'flex';
-                stopBtn.style.display = 'none';
-                sendBtn.style.display = 'none';
+                if (status) { status.textContent = '🔊 Lecture...'; status.className = 'cf-vocal-status playing'; }
+                setDisplay(recordBtn, 'flex');
+                setDisplay(stopBtn, 'none');
+                setDisplay(sendBtn, 'none');
                 break;
             default: // ready
-                status.textContent = 'Prêt';
-                status.className = 'cf-vocal-status';
-                recordBtn.style.display = 'flex';
-                stopBtn.style.display = 'none';
-                sendBtn.style.display = 'none';
+                if (status) { status.textContent = 'Prêt'; status.className = 'cf-vocal-status'; }
+                setDisplay(recordBtn, 'flex');
+                setDisplay(stopBtn, 'none');
+                setDisplay(sendBtn, 'none');
         }
     }
 
@@ -434,10 +522,23 @@
 
     function stopVisualizer() {
         const visualizer = document.getElementById('cf-visualizer');
-        visualizer.innerHTML = '';
+        if (visualizer) visualizer.innerHTML = '';
         if (audioContext) {
             audioContext.close();
             audioContext = null;
+        }
+    }
+
+    async function tryPermissions() {
+        try {
+            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+            s.getTracks().forEach(t => t.stop());
+            addMessage('✅ Micro accessible — permissions OK.', 'bot');
+            return true;
+        } catch (err) {
+            console.error('Permissions microphone failed:', err);
+            addMessage('❌ Impossible d\'accéder au micro. Vérifiez les permissions du navigateur (icône cadenas).', 'error');
+            return false;
         }
     }
 
