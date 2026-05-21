@@ -39,8 +39,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🔨 Construction de la base de connaissances
-        run: python build_knowledge_base.py
+      - name: 🔨 Construction de la base de connaissances (optionnel)
+        run: |
+          if [ -f build_knowledge_base.py ]; then
+            echo "✅ build_knowledge_base.py trouvé — exécution..."
+            python build_knowledge_base.py
+          else
+            echo "⚠️ build_knowledge_base.py absent dans ce repo — skip."
+          fi
 
       - name: 🧪 Exécution des tests
         run: |
