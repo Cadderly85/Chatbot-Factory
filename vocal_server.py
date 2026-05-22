@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-Chatbot Factory - Serveur Vocal
-================================
-Reçoit des appels via Twilio, transcrit la voix en texte (Whisper),
-fait répondre l'agent LLM, et vocalise la réponse (Edge TTS).
+Chatbot Factory — Serveur Vocal (Twilio)
+=========================================
+Ancien backend téléphonique / démo voix via Twilio.
+
+Il reste ici pour compatibilité et tests, mais le flux public actuel
+utilise le widget GitHub Pages + le backend Hugging Face Spaces.
 
 Flow:
   1. Client appelle → Twilio reçoit l'appel
   2. Twilio envoie le stream audio au webhook /voice
   3. Whisper transcrit l'audio en texte
-  4. L'agent LLM génère une réponse
+  4. LLM auto (OpenRouter → OpenAI)
   5. Edge TTS vocalise la réponse
   6. Twilio joue la réponse au client
 
-Dépendances:
-    pip install whisper edge-tts fastapi uvicorn twilio python-dotenv
-
-Usage:
-    python vocal_server.py
+Variables clés:
+  LLM_BACKEND=auto
+  OPENROUTER_MODEL=openrouter/owl-alpha
+  OPENAI_MODEL=gpt-5.4-mini
 """
 
 import os
@@ -41,7 +42,7 @@ logger = logging.getLogger("vocal_server")
 # ─── Configuration ────────────────────────────────────────────────────────────
 
 # LLM
-LLM_BACKEND = os.getenv("LLM_BACKEND", "openrouter")
+LLM_BACKEND = os.getenv("LLM_BACKEND", "auto")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
 
@@ -99,40 +100,69 @@ SYSTEM_PROMPT = """Tu es l'assistant vocal de **{company_name}**. Tu réponds au
 # ─── Fonctions LLM ────────────────────────────────────────────────────────────
 
 def call_llm(messages: list[dict], language: str = "fr") -> str:
-    """Appeler le LLM via API REST."""
+    """Appeler le LLM via API REST avec fallback OpenRouter -> OpenAI."""
     import urllib.request
 
-    if LLM_BACKEND == "openrouter":
-        api_key = OPENROUTER_API_KEY
-        model = OPENROUTER_MODEL
-        url = "https://openrouter.ai/api/v1/chat/completions"
-    else:
-        return "Bonjour ! Je suis l'assistant. Comment puis-je vous aider?"
+    backend = (LLM_BACKEND or "").strip().lower()
 
-    if not api_key:
-        return "⚠️ Clé API non configurée."
+    def candidates():
+        if backend == "auto":
+            ordered = []
+            if OPENROUTER_API_KEY:
+                ordered.append(("openrouter", OPENROUTER_MODEL, "https://openrouter.ai/api/v1/chat/completions", OPENROUTER_API_KEY))
+            if OPENAI_API_KEY:
+                ordered.append(("openai", OPENAI_MODEL, "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY))
+            if not ordered:
+                ordered = [
+                    ("openrouter", OPENROUTER_MODEL, "https://openrouter.ai/api/v1/chat/completions", OPENROUTER_API_KEY),
+                    ("openai", OPENAI_MODEL, "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY),
+                ]
+            return ordered
+        if backend == "openrouter":
+            return [("openrouter", OPENROUTER_MODEL, "https://openrouter.ai/api/v1/chat/completions", OPENROUTER_API_KEY)]
+        if backend == "openai":
+            return [("openai", OPENAI_MODEL, "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY)]
+        return []
 
-    payload = json.dumps({
-        "model": model,
-        "messages": messages,
-        "max_tokens": 200,
-        "temperature": 0.7,
-    }).encode()
+    for backend_name, model, url, api_key in candidates():
+        if not api_key:
+            continue
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+        payload_dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+        }
+        if backend_name == "openai":
+            payload_dict["max_completion_tokens"] = 200
+        else:
+            payload_dict["max_tokens"] = 200
 
-    req = urllib.request.Request(url, data=payload, headers=headers)
+        payload = json.dumps(payload_dict).encode()
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode())
-            return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        logger.error(f"Erreur LLM: {e}")
-        return "Désolé, une erreur s'est produite. Veuillez réessayer."
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                result = json.loads(response.read().decode())
+                return result["choices"][0]["message"]["content"]
+        except Exception as e:
+            body_text = ""
+            if hasattr(e, "read"):
+                try:
+                    body_text = e.read().decode(errors="replace")
+                except Exception:
+                    body_text = ""
+            logger.error(f"Erreur LLM {backend_name}: {e} body={body_text}")
+            continue
+
+    return "Désolé, je n'ai pas pu joindre le modèle de réponse. Veuillez réessayer."
 
 
 async def text_to_speech(text: str, language: str = "fr") -> bytes:

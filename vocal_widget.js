@@ -10,9 +10,12 @@
  *   4. Whisper transcrit → LLM répond → Edge TTS vocalise
  *   5. Le navigateur joue la réponse audio
  * 
- * Usage:
- *   <script src="https://cdn.chatbotfactory.xyz/vocal-widget.js"></script>
- *   <div id="chatbot-vocal" data-vocal-api-url="https://huggingface.co/spaces/Cadderlyy/chatbot-factory-vocal"></div>
+ * Usage de test:
+ *   <div id="chatbot-vocal"
+ *        data-vocal-api-url="https://cadderlyy-chatbot-factory-vocal.hf.space"></div>
+ *
+ * La page de démo publique est hébergée sur GitHub Pages:
+ *   https://cadderly85.github.io/Chatbot-Factory/
  */
 
 (function() {

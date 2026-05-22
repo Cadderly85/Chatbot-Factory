@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 Agent Conversationnel — Clinique Dentaire Sourire
-Version allégée pour Render (pas de dépendances lourdes)
+Version Render légère, avec fallback LLM auto.
+
+Ordre LLM:
+  1) OpenRouter (openrouter/owl-alpha)
+  2) OpenAI (gpt-5.4-mini)
+  3) Groq (si configuré)
 """
 
 import os
@@ -59,49 +64,75 @@ SYSTEM_PROMPT = """Tu es l'assistant virtuel de **Clinique Dentaire Sourire**, u
 - Toujours terminer par une question ou un appel à l'action"""
 
 # Configuration LLM
-LLM_BACKEND = os.getenv("LLM_BACKEND", "openrouter")
+LLM_BACKEND = os.getenv("LLM_BACKEND", "auto")
 
 def call_llm(messages):
-    """Appeler le LLM via API REST (pas de dépendance lourde)."""
+    """Appeler le LLM via API REST avec fallback OpenRouter -> OpenAI -> Groq."""
     import urllib.request
     import urllib.parse
-    
-    if LLM_BACKEND == "openrouter":
-        api_key = os.getenv("OPENROUTER_API_KEY", "")
-        model = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
-        url = "https://openrouter.ai/api/v1/chat/completions"
-    elif LLM_BACKEND == "groq":
-        api_key = os.getenv("GROQ_API_KEY", "")
-        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        url = "https://api.groq.com/openai/v1/chat/completions"
-    else:
-        # Fallback : réponse simple sans LLM
-        return "Bonjour ! Je suis l'agent de démonstration de Clinique Dentaire Sourire. Comment puis-je vous aider aujourd'hui ?"
-    
-    if not api_key:
-        return "⚠️ Clé API LLM non configurée. Veuillez contacter l'administrateur."
-    
-    payload = json.dumps({
-        "model": model,
-        "messages": messages,
-        "max_tokens": 500,
-        "temperature": 0.7,
-    }).encode()
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    
-    req = urllib.request.Request(url, data=payload, headers=headers)
-    
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode())
-            return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        logger.error(f"Erreur LLM: {e}")
-        return f"Désolé, une erreur s'est produite. Veuillez réessayer ou nous appeler au (514) 555-0123."
+
+    backend = (LLM_BACKEND or "").strip().lower()
+
+    def candidates():
+        if backend == "auto":
+            ordered = []
+            if os.getenv("OPENROUTER_API_KEY", ""):
+                ordered.append(("openrouter", os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha"), "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY", "")))
+            if os.getenv("OPENAI_API_KEY", ""):
+                ordered.append(("openai", os.getenv("OPENAI_MODEL", "gpt-5.4-mini"), "https://api.openai.com/v1/chat/completions", os.getenv("OPENAI_API_KEY", "")))
+            if os.getenv("GROQ_API_KEY", ""):
+                ordered.append(("groq", os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"), "https://api.groq.com/openai/v1/chat/completions", os.getenv("GROQ_API_KEY", "")))
+            if not ordered:
+                ordered = [
+                    ("openrouter", os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha"), "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY", "")),
+                    ("openai", os.getenv("OPENAI_MODEL", "gpt-5.4-mini"), "https://api.openai.com/v1/chat/completions", os.getenv("OPENAI_API_KEY", "")),
+                    ("groq", os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"), "https://api.groq.com/openai/v1/chat/completions", os.getenv("GROQ_API_KEY", "")),
+                ]
+            return ordered
+        if backend == "openrouter":
+            return [("openrouter", os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha"), "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY", ""))]
+        if backend == "openai":
+            return [("openai", os.getenv("OPENAI_MODEL", "gpt-5.4-mini"), "https://api.openai.com/v1/chat/completions", os.getenv("OPENAI_API_KEY", ""))]
+        if backend == "groq":
+            return [("groq", os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"), "https://api.groq.com/openai/v1/chat/completions", os.getenv("GROQ_API_KEY", ""))]
+        return []
+
+    for backend_name, model, url, api_key in candidates():
+        if not api_key:
+            continue
+
+        payload_dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+        }
+        if backend_name == "openai":
+            payload_dict["max_completion_tokens"] = 500
+        else:
+            payload_dict["max_tokens"] = 500
+
+        payload = json.dumps(payload_dict).encode()
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        req = urllib.request.Request(url, data=payload, headers=headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                result = json.loads(response.read().decode())
+                return result["choices"][0]["message"]["content"]
+        except Exception as e:
+            body_text = ""
+            if hasattr(e, "read"):
+                try:
+                    body_text = e.read().decode(errors="replace")
+                except Exception:
+                    body_text = ""
+            logger.error(f"Erreur LLM {backend_name}: {e} body={body_text}")
+            continue
+
+    return f"Désolé, je n'ai pas pu joindre le modèle de réponse. Veuillez réessayer ou nous appeler au (514) 555-0123."
 
 # FastAPI
 app = FastAPI(title="Agent — Clinique Dentaire Sourire")

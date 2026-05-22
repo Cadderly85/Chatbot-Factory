@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """
-Chatbot Factory — Serveur Vocal API
-=====================================
-Reçoit l'audio du widget, transcrit avec Whisper,
-fait répondre l'agent LLM, et renvoie la réponse audio (TTS).
+Chatbot Factory — Serveur Vocal HF
+===================================
+Backend de production du widget vocal pour Hugging Face Spaces.
+
+Flux:
+  widget GitHub Pages → /vocal/transcribe-and-respond → Whisper → LLM auto
+  → Edge TTS → réponse audio
 
 Endpoints:
-  POST /vocal/transcribe-and-respond — Reçoit audio → renvoie texte + audio
+  POST /vocal/transcribe-and-respond — Audio → texte + audio
   GET  /vocal/health                 — Health check
-  WS   /vocal/ws                     — WebSocket pour streaming temps réel
+  WS   /vocal/ws                     — Streaming temps réel
 
-Dépendances:
-    pip install openai-whisper edge-tts fastapi uvicorn python-dotenv
+Variables clés:
+  LLM_BACKEND=auto
+  OPENROUTER_MODEL=openrouter/owl-alpha
+  OPENAI_MODEL=gpt-5.4-mini
+  ALLOWED_ORIGINS=https://cadderly85.github.io
 """
 
 import os
@@ -40,7 +46,7 @@ logger = logging.getLogger("vocal_api")
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-LLM_BACKEND = os.getenv("LLM_BACKEND", "openrouter")
+LLM_BACKEND = os.getenv("LLM_BACKEND", "auto")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -278,70 +284,66 @@ def call_llm(messages: list[dict], language: str = "fr") -> str:
     import urllib.request
 
     backend = (LLM_BACKEND or "").strip().lower()
-    if backend == "auto":
-        backend = "openai" if OPENAI_API_KEY else "openrouter"
 
-    if backend == "openrouter":
-        api_key = OPENROUTER_API_KEY
-        model = OPENROUTER_MODEL
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
+    def candidates():
+        if backend == "auto":
+            ordered = []
+            if OPENROUTER_API_KEY:
+                ordered.append(("openrouter", OPENROUTER_MODEL, "https://openrouter.ai/api/v1/chat/completions", OPENROUTER_API_KEY))
+            if OPENAI_API_KEY:
+                ordered.append(("openai", OPENAI_MODEL, "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY))
+            if not ordered:
+                ordered = [
+                    ("openrouter", OPENROUTER_MODEL, "https://openrouter.ai/api/v1/chat/completions", OPENROUTER_API_KEY),
+                    ("openai", OPENAI_MODEL, "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY),
+                ]
+            return ordered
+        if backend == "openrouter":
+            return [("openrouter", OPENROUTER_MODEL, "https://openrouter.ai/api/v1/chat/completions", OPENROUTER_API_KEY)]
+        if backend == "openai":
+            return [("openai", OPENAI_MODEL, "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY)]
+        return []
+
+    for backend_name, model, url, api_key in candidates():
+        if not api_key:
+            continue
+
+        payload_dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
         }
-    elif backend == "openai":
-        api_key = OPENAI_API_KEY
-        model = OPENAI_MODEL
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-    else:
-        if language == "fr":
-            return "Bonjour ! Je suis votre assistant. Comment puis-je vous aider ?"
-        return "Hello! I'm your assistant. How can I help you?"
-
-    if not api_key:
-        if language == "fr":
-            return "⚠️ Clé API non configurée pour le backend LLM choisi."
-        return "⚠️ The API key is missing for the selected LLM backend."
-
-    payload_dict = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.7,
-    }
-    if backend == "openai":
-        payload_dict["max_completion_tokens"] = 200
-    else:
-        payload_dict["max_tokens"] = 200
-
-    payload = json.dumps(payload_dict).encode()
-
-    req = urllib.request.Request(url, data=payload, headers=headers)
-
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode())
-            return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        body_text = ""
-        status = getattr(e, "code", None)
-        if hasattr(e, "read"):
-            try:
-                body_text = e.read().decode(errors="replace")
-            except Exception:
-                body_text = ""
-        logger.error(f"Erreur LLM: status={status} err={e} body={body_text}")
-        if language == "fr":
-            if body_text:
-                return f"Désolé, erreur LLM: {body_text}"
-            return "Désolé, une erreur s'est produite. Veuillez réessayer."
+        if backend_name == "openai":
+            payload_dict["max_completion_tokens"] = 200
         else:
-            if body_text:
-                return f"Sorry, LLM error: {body_text}"
-            return "Sorry, an error occurred. Please try again."
+            payload_dict["max_tokens"] = 200
+
+        payload = json.dumps(payload_dict).encode()
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                result = json.loads(response.read().decode())
+                return result["choices"][0]["message"]["content"]
+        except Exception as e:
+            body_text = ""
+            if hasattr(e, "read"):
+                try:
+                    body_text = e.read().decode(errors="replace")
+                except Exception:
+                    body_text = ""
+            logger.error(f"Erreur LLM {backend_name}: {e} body={body_text}")
+            continue
+
+    return "Désolé, je n'ai pas pu joindre le modèle de réponse. Veuillez réessayer."
+
 
 
 async def generate_tts(text: str, language: str = "fr") -> str:
