@@ -12,7 +12,7 @@
  * 
  * Usage:
  *   <script src="https://cdn.chatbotfactory.xyz/vocal-widget.js"></script>
- *   <div id="chatbot-vocal" data-vocal-api-url="https://brand-automobiles-aluminium-dominant.trycloudflare.com"></div>
+ *   <div id="chatbot-vocal" data-vocal-api-url="https://huggingface.co/spaces/Cadderlyy/chatbot-factory-vocal"></div>
  */
 
 (function() {
@@ -25,7 +25,7 @@
         const rawUrl =
             container?.dataset?.vocalApiUrl ||
             container?.dataset?.agentUrl ||
-            window.location.origin;
+            "https://huggingface.co/spaces/Cadderlyy/chatbot-factory-vocal";
 
         return rawUrl.replace(/\/+$/, '');
     }
