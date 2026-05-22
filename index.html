@@ -14,29 +14,58 @@
     }
     .page {
       padding: 40px;
-      max-width: 900px;
+      max-width: 1000px;
       margin: 0 auto;
     }
-    h1 { font-size: 28px; margin-bottom: 8px; }
-    p { opacity: 0.7; }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    p { opacity: 0.85; line-height: 1.5; }
+    code {
+      background: rgba(255,255,255,.08);
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+    .panel {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 12px;
+      background: rgba(255,255,255,.04);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+    }
+    .ok { color: #9dffb0; }
+    .warn { color: #ffd27d; }
+    .err { color: #ff9d9d; }
   </style>
 </head>
 <body>
   <div class="page">
     <h1>Test du widget vocal</h1>
     <p>Le widget doit apparaître en bas à droite. Cliquez sur le micro et parlez.</p>
-    <p>Backend : <code>https://cadderlyy-chatbot-factory-vocal.hf.space</code></p>
-
-  <script>
-    window.__CF_WIDGET_VERSION__ = '2026-05-22b';
-  </script>
+    <p>Backend HF : <code>https://cadderlyy-chatbot-factory-vocal.hf.space</code></p>
+    <p>Page test : <code id="page-url"></code></p>
+    <p>Version widget : <code id="widget-version"></code></p>
+    <div class="panel" id="debug">Initialisation…</div>
   </div>
 
   <div
     id="chatbot-vocal"
-    data-vocal-api-url="https://huggingface.co/spaces/Cadderlyy/chatbot-factory-vocal">
+    data-vocal-api-url="https://cadderlyy-chatbot-factory-vocal.hf.space">
   </div>
 
-  <script src="vocal_widget.js?v=2026-05-22b"></script>
+  <script>
+    window.__CF_WIDGET_VERSION__ = '2026-05-22c';
+    document.getElementById('page-url').textContent = location.href;
+    document.getElementById('widget-version').textContent = window.__CF_WIDGET_VERSION__;
+    document.getElementById('debug').textContent = [
+      'API base: https://cadderlyy-chatbot-factory-vocal.hf.space',
+      'Transcribe endpoint: https://cadderlyy-chatbot-factory-vocal.hf.space/vocal/transcribe-and-respond',
+      'Health endpoint: https://cadderlyy-chatbot-factory-vocal.hf.space/vocal/health',
+      'Origin: ' + location.origin,
+      'Cache-buster: v=2026-05-22c'
+    ].join('\n');
+  </script>
+
+  <script src="https://raw.githubusercontent.com/Cadderly85/Chatbot-Factory/main/vocal_widget.js?v=2026-05-22c"></script>
 </body>
 </html>
