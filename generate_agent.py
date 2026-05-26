@@ -28,6 +28,13 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+# ─── Import optionnel de deploy_to_hf ─────────────────────────────────────────
+try:
+    from deploy_to_hf import deploy_agent as _deploy_to_hf_agent
+    _HAS_DEPLOY = True
+except ImportError:
+    _HAS_DEPLOY = False
+
 # ─── Configuration ────────────────────────────────────────────────────────────
 
 load_dotenv()
@@ -1000,6 +1007,45 @@ def slugify(text: str) -> str:
     return text.strip("-")
 
 
+# ─── ÉTAPE 8 — Déploiement HF Space ──────────────────────────────────────────
+
+def deploy_to_hf_space(
+    output_dir: Path,
+    client_data: dict,
+    company_name: str,
+) -> dict | None:
+    """
+    Déploie l'agent généré vers un HF Space dédié.
+    Requiert HF_TOKEN, OPENROUTER_API_KEY, OPENAI_API_KEY dans l'environnement.
+    Si les clés ne sont pas disponibles, le déploiement est ignoré silencieusement.
+    """
+    hf_token = os.getenv("HF_TOKEN", "")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+
+    if not hf_token:
+        logger.info("⏭️ HF_TOKEN non configuré — déploiement HF ignoré (déploiement local uniquement)")
+        return None
+
+    if not _HAS_DEPLOY:
+        logger.warning("⚠️ deploy_to_hf.py non trouvé à côté de generate_agent.py — déploiement ignoré")
+        return None
+
+    try:
+        result = _deploy_to_hf_agent(
+            agent_dir=output_dir,
+            hf_token=hf_token,
+            openrouter_key=openrouter_key,
+            openai_key=openai_key,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"❌ Erreur lors du déploiement HF: {e}")
+        logger.info("💡 L'agent a été généré localement. Déploiement manuel :")
+        logger.info(f"   python deploy_to_hf.py --agent-dir {output_dir} --hf-token <HF_TOKEN>")
+        return None
+
+
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1059,19 +1105,28 @@ def main():
     logger.info("🧪 Étape 7 — Génération des tests...")
     run_automated_tests(output_dir, client_data)
 
+    # ─── Étape 8 — Déploiement HF Space ──────────────────────────────────────
+    logger.info("🚀 Étape 8 — Déploiement vers HuggingFace Space...")
+    deploy_result = deploy_to_hf_space(
+        output_dir=output_dir,
+        client_data=client_data,
+        company_name=company_name,
+    )
+
     # Résumé
     logger.info("")
-    logger.info("=" * 50)
-    logger.info(f"✅ AGENT GÉNÉRÉ AVEC SUCCÈS pour {company_name}")
-    logger.info(f"📁 Dossier : {output_dir}")
+    logger.info("=" * 60)
+    logger.info(f"✅ AGENT GÉNÉRÉ ET DÉPLOYÉ AVEC SUCCÈS pour {company_name}")
+    logger.info(f"📁 Dossier local : {output_dir}")
+    if deploy_result:
+        logger.info(f"🌐 HF Space     : {deploy_result.get('space_url', 'N/A')}")
+        logger.info(f"🤖 App URL      : {deploy_result.get('app_url', 'N/A')}")
+        logger.info(f"💬 Chat endpoint: {deploy_result.get('app_url', '')}/chat")
     logger.info("")
-    logger.info("Prochaines étapes :")
-    logger.info(f"  1. cd {output_dir}")
-    logger.info("  2. Copier .env.example → .env et remplir les clés API")
-    logger.info("  3. python agent.py")
-    logger.info("  4. python test_agent.py")
-    logger.info("  5. Déployer sur Render (push sur GitHub + webhook)")
-    logger.info("=" * 50)
+    logger.info("Déploiement local uniquement (pas de HF_TOKEN configuré).")
+    logger.info("Pour déployer automatiquement :")
+    logger.info(f"  python deploy_to_hf.py --agent-dir {output_dir} --hf-token <HF_TOKEN>")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
