@@ -83,38 +83,53 @@
   // ─── Styles ─────────────────────────────────────────────────────────────
 
   const STYLES = `
-    /* Container principal */
+    /* ═══════════════════════════════════════════════════════════════════════
+       Chatbot Factory — Premium Widget Styles
+       ═══════════════════════════════════════════════════════════════════════ */
+
     .cf-widget-container {
       position: fixed;
-      bottom: 20px;
-      ${CONFIG.position}: 20px;
+      bottom: 24px;
+      ${CONFIG.position}: 24px;
       z-index: 999999;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* Bouton d'ouverture */
+    /* ─── Floating Action Button ─────────────────────────────────────────── */
+
     .cf-fab {
-      width: 60px;
-      height: 60px;
+      width: 64px;
+      height: 64px;
       border-radius: 50%;
-      background: ${CONFIG.primaryColor};
+      background: linear-gradient(135deg, ${CONFIG.primaryColor}, ${adjustColor(CONFIG.primaryColor, -30)});
       border: none;
       cursor: pointer;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      box-shadow:
+        0 4px 24px rgba(0,0,0,0.18),
+        0 0 0 0 ${hexToRgba(CONFIG.primaryColor, 0.4)};
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: transform 0.2s, box-shadow 0.2s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
+      animation: cf-pulse 2.5s ease-in-out infinite;
     }
     .cf-fab:hover {
-      transform: scale(1.08);
-      box-shadow: 0 6px 25px rgba(0,0,0,0.2);
+      transform: scale(1.12) rotate(8deg);
+      box-shadow:
+        0 8px 32px rgba(0,0,0,0.25),
+        0 0 0 8px ${hexToRgba(CONFIG.primaryColor, 0.15)};
+      animation: none;
+    }
+    .cf-fab:active {
+      transform: scale(0.95);
     }
     .cf-fab svg {
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       fill: white;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .cf-fab .cf-close-icon {
       display: none;
@@ -125,38 +140,59 @@
     .cf-fab.cf-open .cf-close-icon {
       display: block;
     }
+    .cf-fab.cf-open {
+      animation: none;
+      transform: rotate(90deg);
+    }
 
-    /* Badge notification */
+    @keyframes cf-pulse {
+      0%, 100% { box-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 0 0 0 ${hexToRgba(CONFIG.primaryColor, 0.4)}; }
+      50% { box-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 0 0 12px ${hexToRgba(CONFIG.primaryColor, 0)}; }
+    }
+
+    /* ─── Notification badge ─────────────────────────────────────────────── */
+
     .cf-badge {
       position: absolute;
       top: -2px;
       right: -2px;
-      width: 18px;
-      height: 18px;
-      background: #ef4444;
+      width: 20px;
+      height: 20px;
+      background: linear-gradient(135deg, #ef4444, #dc2626);
       border-radius: 50%;
       color: white;
       font-size: 11px;
-      font-weight: bold;
+      font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
-      border: 2px solid white;
+      border: 2.5px solid white;
+      box-shadow: 0 2px 8px rgba(239,68,68,0.4);
+      animation: cf-badge-pop 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes cf-badge-pop {
+      0% { transform: scale(0); }
+      80% { transform: scale(1.2); }
+      100% { transform: scale(1); }
     }
 
-    /* Fenêtre de chat */
+    /* ─── Chat window ────────────────────────────────────────────────────── */
+
     .cf-chat-window {
       display: none;
-      width: 380px;
-      height: 560px;
-      max-height: 70vh;
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+      width: 400px;
+      height: 600px;
+      max-height: calc(100vh - 120px);
+      background: #ffffff;
+      border-radius: 20px;
+      box-shadow:
+        0 25px 60px rgba(0,0,0,0.12),
+        0 8px 24px rgba(0,0,0,0.08);
       flex-direction: column;
       overflow: hidden;
-      margin-bottom: 12px;
-      animation: cf-slide-up 0.3s ease;
+      margin-bottom: 16px;
+      animation: cf-slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(0,0,0,0.04);
     }
     .cf-chat-window.cf-visible {
       display: flex;
@@ -170,78 +206,121 @@
     }
 
     @keyframes cf-slide-up {
-      from { opacity: 0; transform: translateY(20px) scale(0.95); }
+      from { opacity: 0; transform: translateY(30px) scale(0.92); }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
-    /* En-tête */
+    /* ─── Header ─────────────────────────────────────────────────────────── */
+
     .cf-header {
-      background: ${CONFIG.primaryColor};
+      background: linear-gradient(135deg, ${CONFIG.primaryColor}, ${adjustColor(CONFIG.primaryColor, -20)});
       color: white;
-      padding: 16px 20px;
+      padding: 18px 20px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
       cursor: pointer;
       user-select: none;
+      position: relative;
+      overflow: hidden;
     }
-    .cf-header-avatar {
-      width: 40px;
-      height: 40px;
+    .cf-header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -30%;
+      width: 120px;
+      height: 120px;
+      background: rgba(255,255,255,0.06);
       border-radius: 50%;
-      background: rgba(255,255,255,0.2);
+    }
+    .cf-header::after {
+      content: '';
+      position: absolute;
+      bottom: -60%;
+      left: -10%;
+      width: 80px;
+      height: 80px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 50%;
+    }
+
+    .cf-header-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
+      font-size: 22px;
       overflow: hidden;
+      border: 2px solid rgba(255,255,255,0.25);
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
     }
     .cf-header-avatar img {
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
+
     .cf-header-info {
       flex: 1;
+      position: relative;
+      z-index: 1;
     }
     .cf-header-name {
-      font-weight: 600;
-      font-size: 15px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.2px;
     }
     .cf-header-status {
       font-size: 12px;
-      opacity: 0.85;
+      opacity: 0.9;
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
+      margin-top: 2px;
     }
     .cf-status-dot {
-      width: 7px;
-      height: 7px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: #4ade80;
       display: inline-block;
+      box-shadow: 0 0 6px rgba(74,222,128,0.5);
     }
     .cf-status-dot.cf-offline {
       background: #f87171;
+      box-shadow: 0 0 6px rgba(248,113,113,0.5);
     }
+
     .cf-header-actions {
       display: flex;
-      gap: 4px;
+      gap: 2px;
+      position: relative;
+      z-index: 1;
     }
     .cf-header-btn {
       background: none;
       border: none;
       color: white;
       cursor: pointer;
-      padding: 6px;
-      border-radius: 6px;
-      opacity: 0.8;
-      transition: opacity 0.2s, background 0.2s;
+      padding: 8px;
+      border-radius: 10px;
+      opacity: 0.75;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .cf-header-btn:hover {
       opacity: 1;
       background: rgba(255,255,255,0.15);
+      transform: scale(1.1);
     }
     .cf-header-btn svg {
       width: 18px;
@@ -249,167 +328,238 @@
       fill: currentColor;
     }
 
-    /* Messages */
+    /* ─── Messages area ──────────────────────────────────────────────────── */
+
     .cf-messages {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 20px 16px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      background: #f8f9fb;
+      gap: 14px;
+      background: linear-gradient(180deg, #f8f9fc 0%, #f0f2f7 100%);
     }
     .cf-messages::-webkit-scrollbar {
-      width: 5px;
+      width: 6px;
+    }
+    .cf-messages::-webkit-scrollbar-track {
+      background: transparent;
     }
     .cf-messages::-webkit-scrollbar-thumb {
       background: #d1d5db;
       border-radius: 10px;
     }
+    .cf-messages::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
 
-    /* Bulles de message */
+    /* ─── Message bubbles ────────────────────────────────────────────────── */
+
     .cf-message {
-      max-width: 80%;
-      padding: 10px 14px;
-      border-radius: 14px;
+      max-width: 82%;
+      padding: 12px 16px;
+      border-radius: 18px;
       font-size: 14px;
-      line-height: 1.5;
-      animation: cf-fade-in 0.2s ease;
+      line-height: 1.55;
+      animation: cf-fade-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       word-wrap: break-word;
+      position: relative;
     }
     @keyframes cf-fade-in {
-      from { opacity: 0; transform: translateY(5px); }
+      from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
     .cf-message-bot {
       background: white;
-      color: #1f2937;
+      color: #1a1a2e;
       align-self: flex-start;
-      border-bottom-left-radius: 4px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      border-bottom-left-radius: 6px;
+      box-shadow:
+        0 2px 8px rgba(0,0,0,0.04),
+        0 1px 3px rgba(0,0,0,0.06);
     }
+    .cf-message-bot::before {
+      content: '';
+      position: absolute;
+      left: -6px;
+      bottom: 12px;
+      width: 12px;
+      height: 12px;
+      background: white;
+      border-radius: 0 0 0 4px;
+      transform: rotate(45deg);
+    }
+
     .cf-message-user {
-      background: ${CONFIG.primaryColor};
+      background: linear-gradient(135deg, ${CONFIG.primaryColor}, ${adjustColor(CONFIG.primaryColor, -15)});
       color: white;
       align-self: flex-end;
-      border-bottom-right-radius: 4px;
+      border-bottom-right-radius: 6px;
+      box-shadow:
+        0 2px 12px ${hexToRgba(CONFIG.primaryColor, 0.25)},
+        0 1px 3px rgba(0,0,0,0.08);
     }
+
     .cf-message-time {
       font-size: 10px;
-      opacity: 0.5;
-      margin-top: 4px;
+      opacity: 0.45;
+      margin-top: 6px;
       text-align: right;
+      font-weight: 500;
     }
     .cf-message-bot .cf-message-time {
       text-align: left;
     }
 
-    /* Indicateur de frappe */
+    /* ─── Typing indicator ───────────────────────────────────────────────── */
+
     .cf-typing-indicator {
       display: none;
       align-self: flex-start;
       background: white;
-      padding: 12px 16px;
-      border-radius: 14px;
-      border-bottom-left-radius: 4px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      padding: 14px 18px;
+      border-radius: 18px;
+      border-bottom-left-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      margin-left: 0;
     }
     .cf-typing-indicator.cf-visible {
       display: flex;
-      gap: 4px;
+      gap: 5px;
+      animation: cf-fade-in 0.3s ease;
     }
     .cf-typing-dot {
-      width: 7px;
-      height: 7px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: #9ca3af;
-      animation: cf-typing-bounce 1.4s infinite;
+      background: #c4c4c4;
+      animation: cf-typing-bounce 1.4s infinite ease-in-out;
     }
     .cf-typing-dot:nth-child(2) { animation-delay: 0.2s; }
     .cf-typing-dot:nth-child(3) { animation-delay: 0.4s; }
     @keyframes cf-typing-bounce {
-      0%, 60%, 100% { transform: translateY(0); }
-      30% { transform: translateY(-6px); }
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-8px); opacity: 1; }
     }
 
-    /* Zone de saisie */
+    /* ─── Input area ─────────────────────────────────────────────────────── */
+
     .cf-input-area {
-      padding: 12px 16px;
-      border-top: 1px solid #e5e7eb;
+      padding: 14px 16px;
+      border-top: 1px solid #eef0f3;
       background: white;
       display: flex;
-      gap: 8px;
+      gap: 10px;
       align-items: flex-end;
     }
     .cf-input {
       flex: 1;
-      border: 1px solid #e5e7eb;
-      border-radius: 20px;
-      padding: 10px 16px;
+      border: 1.5px solid #e8eaed;
+      border-radius: 24px;
+      padding: 11px 18px;
       font-size: 14px;
       font-family: inherit;
       resize: none;
       outline: none;
       max-height: 100px;
-      transition: border-color 0.2s;
-      line-height: 1.4;
+      transition: all 0.25s;
+      line-height: 1.45;
+      background: #f8f9fb;
     }
     .cf-input:focus {
       border-color: ${CONFIG.primaryColor};
+      background: white;
+      box-shadow: 0 0 0 3px ${hexToRgba(CONFIG.primaryColor, 0.1)};
     }
     .cf-input::placeholder {
-      color: #9ca3af;
+      color: #a0a4ad;
     }
+
     .cf-send-btn {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      background: ${CONFIG.primaryColor};
+      background: linear-gradient(135deg, ${CONFIG.primaryColor}, ${adjustColor(CONFIG.primaryColor, -20)});
       border: none;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: transform 0.15s, opacity 0.2s;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 3px 12px ${hexToRgba(CONFIG.primaryColor, 0.3)};
     }
     .cf-send-btn:hover {
-      transform: scale(1.05);
+      transform: scale(1.1);
+      box-shadow: 0 5px 20px ${hexToRgba(CONFIG.primaryColor, 0.4)};
+    }
+    .cf-send-btn:active {
+      transform: scale(0.92);
     }
     .cf-send-btn:disabled {
-      opacity: 0.4;
+      opacity: 0.35;
       cursor: not-allowed;
       transform: none;
+      box-shadow: none;
     }
     .cf-send-btn svg {
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
       fill: white;
     }
 
-    /* Message de bienvenue */
+    /* ─── Welcome text ───────────────────────────────────────────────────── */
+
     .cf-welcome {
       text-align: center;
-      padding: 8px 16px;
-      color: #6b7280;
+      padding: 10px 20px;
+      color: #9ca3af;
       font-size: 12px;
+      font-weight: 500;
     }
 
-    /* Responsive */
+    /* ─── Responsive ─────────────────────────────────────────────────────── */
+
     @media (max-width: 480px) {
       .cf-chat-window {
-        width: calc(100vw - 20px);
-        height: calc(100vh - 100px);
+        width: calc(100vw - 16px);
+        height: calc(100vh - 90px);
         max-height: none;
-        border-radius: 16px 16px 0 0;
+        border-radius: 20px 20px 0 0;
         margin-bottom: 0;
       }
       .cf-widget-container {
-        bottom: 10px;
-        ${CONFIG.position}: 10px;
+        bottom: 8px;
+        ${CONFIG.position}: 8px;
+      }
+      .cf-fab {
+        width: 58px;
+        height: 58px;
+      }
+      .cf-fab svg {
+        width: 26px;
+        height: 26px;
       }
     }
   `;
+
+  // ─── Helpers couleurs ────────────────────────────────────────────────────
+
+  function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function adjustColor(hex, amount) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+    const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+    const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+    return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
+  }
 
   // ─── SVG Icons ──────────────────────────────────────────────────────────
 
