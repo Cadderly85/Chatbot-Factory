@@ -4,7 +4,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY agent.py .
-COPY knowledge_base/ knowledge_base/
 COPY system_prompt.md .
+RUN mkdir -p knowledge_base
+COPY knowledge_base/knowledge.json knowledge_base/knowledge.json
 EXPOSE 7860
 CMD ["uvicorn", "agent:app", "--host", "0.0.0.0", "--port", "7860"]
