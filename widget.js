@@ -578,7 +578,7 @@
 
   async function sendVoiceMessage(blob) {
     // Methode 1: Essayer l'API Web Speech (transcription cote client)
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (SpeechRecognition) {
       // Utiliser Web Speech API — transcription directe dans le navigateur
@@ -587,7 +587,7 @@
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
-      recognition.onresult = async (event: any) => {
+      recognition.onresult = async (event) => {
         const transcription = event.results[0][0].transcript.trim();
         if (transcription) {
           addMessage("🎤 " + transcription, "user");
