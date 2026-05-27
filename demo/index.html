@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chatbot Factory — Démo Widget Premium</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+      min-height: 100vh;
+      color: white;
+      overflow-x: hidden;
+    }
+
+    /* Hero */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 40px 24px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 100px;
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+      margin-bottom: 32px;
+      backdrop-filter: blur(10px);
+    }
+    .hero-badge span { color: #a78bfa; }
+
+    .hero h1 {
+      font-size: clamp(36px, 6vw, 72px);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      margin-bottom: 20px;
+    }
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, #a78bfa, #6366f1, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: clamp(16px, 2vw, 20px);
+      opacity: 0.7;
+      max-width: 560px;
+      line-height: 1.6;
+      margin-bottom: 40px;
+    }
+
+    .hero-cta {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 60px;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      color: white;
+      border: none;
+      border-radius: 14px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 24px rgba(99, 102, 241, 0.35);
+      text-decoration: none;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.45);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: white;
+      border-radius: 14px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+    }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.1);
+      transform: translateY(-2px);
+    }
+
+    /* Features */
+    .features {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .feature-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 24px;
+      width: 260px;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+    }
+    .feature-card:hover {
+      background: rgba(255,255,255,0.08);
+      transform: translateY(-4px);
+    }
+
+    .feature-icon {
+      font-size: 28px;
+      margin-bottom: 12px;
+    }
+
+    .feature-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      font-size: 13px;
+      opacity: 0.6;
+      line-height: 1.5;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 40px 24px;
+      opacity: 0.4;
+      font-size: 13px;
+    }
+    .footer a { color: #a78bfa; text-decoration: none; }
+
+    /* Decorative orbs */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.15;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .orb-1 { width: 400px; height: 400px; background: #6366f1; top: -100px; left: -100px; }
+    .orb-2 { width: 300px; height: 300px; background: #a78bfa; bottom: -50px; right: -50px; }
+    .orb-3 { width: 200px; height: 200px; background: #818cf8; top: 50%; left: 50%; }
+
+    .hero { position: relative; z-index: 1; }
+  </style>
+</head>
+<body>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+
+  <div class="hero">
+    <div class="hero-badge">
+      <span>●</span> En ligne — Clinique Dentaire Sourire
+    </div>
+
+    <h1>Chatbot Factory<br><span class="gradient">Widget Premium</span></h1>
+
+    <p>Découvrez le nouveau design du widget de chat Chatbot Factory. Cliquez sur le bouton en bas à droite pour parler avec l'agent IA de la clinique dentaire.</p>
+
+    <div class="hero-cta">
+      <button class="btn-primary" onclick="window.ChatbotFactory?.open()">
+        🗨️ Ouvrir le chat
+      </button>
+      <a href="https://github.com/Cadderly85/Chatbot-Factory" class="btn-secondary" target="_blank">
+        📦 Voir le code
+      </a>
+    </div>
+
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>Agent LLM</h3>
+        <p>Propulsé par OpenRouter (owl-alpha) avec fallback OpenAI. Comprend et répond naturellement.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎨</div>
+        <h3>Design Premium</h3>
+        <p>Gradients, glassmorphism, animations fluides. Un widget beau sur tous les sites.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>100% Gratuit</h3>
+        <p>Hébergé sur HuggingFace Spaces. Zéro coût, aucune limite d'utilisation.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Propulsé par <a href="https://github.com/Cadderly85/Chatbot-Factory" target="_blank">Chatbot Factory</a> — Démo : <a href="https://huggingface.co/spaces/Cadderlyy/chatbot-factory-demo" target="_blank">HF Space</a>
+  </div>
+
+  <!-- Widget de chat -->
+  <script src="https://raw.githubusercontent.com/Cadderly85/Chatbot-Factory/main/widget.js"
+          data-agent-url="https://cadderlyy-chatbot-factory-demo.hf.space"
+          data-client-name="Clinique Dentaire Sourire"
+          data-primary-color="#6366f1"
+          data-position="right"
+          data-welcome-message="Bonjour ! Je suis l'assistant de la Clinique Dentaire Sourire. Comment puis-je vous aider aujourd'hui?"
+          data-language="fr">
+  </script>
+</body>
+</html>
