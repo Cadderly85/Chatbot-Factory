@@ -510,141 +510,104 @@
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
   input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 80) + "px"; });
 
-  // ─── Voice Recording ────────────────────────────────────────────────────
+  // ─── Voice Recording (Web Speech API) ────────────────────────────────────
 
-  let mediaRecorder = null;
-  let audioChunks = [];
   let isRecording = false;
+  let recognition = null;
+
+  function getSpeechRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    return SR || null;
+  }
 
   async function toggleVoice() {
     if (isRecording) {
-      stopRecording();
+      stopVoiceRecording();
     } else {
-      await startRecording();
+      await startVoiceRecording();
     }
   }
 
-  async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
-
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(audioChunks, { type: "audio/webm" });
-        stream.getTracks().forEach(t => t.stop());
-        await sendVoiceMessage(blob);
-      };
-
-      mediaRecorder.start();
-      isRecording = true;
-      voiceBtn.classList.add("cf-recording");
-      voiceBtn.innerHTML = ICONS.micOff;
-      voiceBar.classList.add("cf-visible");
-      document.getElementById("cf-voice-bar-text").textContent = T.voiceRecording;
-    } catch (err) {
-      console.error("[Chatbot Factory] Micro error:", err);
+  async function startVoiceRecording() {
+    const SR = getSpeechRecognition();
+    if (!SR) {
       addMessage(T.voiceError, "bot");
+      return;
     }
-  }
 
-  function stopRecording() {
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
-      isRecording = false;
-      voiceBtn.classList.remove("cf-recording");
-      voiceBtn.innerHTML = ICONS.mic;
-      document.getElementById("cf-voice-bar-text").textContent = T.voiceProcessing;
-      isTyping = true;
-      typing.classList.add("cf-visible");
-      scrollToBottom();
-    }
-  }
+    try {
+      // Demander la permission micro d'abord
+      await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  function stopRecording() {
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
-      isRecording = false;
-      voiceBtn.classList.remove("cf-recording");
-      voiceBtn.innerHTML = ICONS.mic;
-      document.getElementById("cf-voice-bar-text").textContent = T.voiceProcessing;
-      isTyping = true;
-      typing.classList.add("cf-visible");
-      scrollToBottom();
-    }
-  }
-
-  async function sendVoiceMessage(blob) {
-    // Methode 1: Essayer l'API Web Speech (transcription cote client)
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      // Utiliser Web Speech API — transcription directe dans le navigateur
-      const recognition = new SpeechRecognition();
+      recognition = new SR();
       recognition.lang = CONFIG.language === "fr" ? "fr-FR" : "en-US";
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
+      recognition.continuous = false;
 
       recognition.onresult = async (event) => {
         const transcription = event.results[0][0].transcript.trim();
         if (transcription) {
           addMessage("🎤 " + transcription, "user");
-          // Envoyer la transcription comme un message texte normal
-          try {
-            const resp = await fetch(`${CONFIG.agentUrl}/chat`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ message: transcription, session_id: sessionId }),
-            });
-            const data = await resp.json();
-            addMessage(data.response || T.errorMessage, "bot");
-          } catch (err) {
-            addMessage(T.errorMessage, "bot");
-          }
+          await sendTextMessage(transcription);
         }
       };
 
-      recognition.onerror = () => {
-        addMessage(T.voiceError, "bot");
+      recognition.onerror = (event) => {
+        console.warn("[Chatbot Factory] SpeechRecognition error:", event.error);
+        if (event.error !== "no-speech") {
+          addMessage(T.voiceError, "bot");
+        }
+        resetVoiceUI();
       };
 
-      // Rejouer l'audio pour que SpeechRecognition le transcrire
-      try {
-        const audio = new Audio();
-        audio.src = URL.createObjectURL(blob);
-        audio.onended = () => { URL.revokeObjectURL(audio.src); };
-        await audio.play();
-        recognition.start();
-        audio.onplay = () => { /* SpeechRecognition ecoute le micro */ };
-      } catch {
-        recognition.start();
-      }
-      return;
+      recognition.onend = () => {
+        resetVoiceUI();
+      };
+
+      recognition.start();
+      isRecording = true;
+      voiceBtn.classList.add("cf-recording");
+      voiceBtn.innerHTML = ICONS.micOff;
+      voiceBar.classList.add("cf-visible");
+      document.getElementById("cf-voice-bar-text").textContent = T.voiceRecording;
+
+    } catch (err) {
+      console.error("[Chatbot Factory] Micro error:", err);
+      addMessage(T.voiceError, "bot");
+      resetVoiceUI();
     }
+  }
 
-    // Methode 2: Fallback — envoyer l'audio au serveur (si /vocal existe)
+  function stopVoiceRecording() {
+    if (recognition && isRecording) {
+      recognition.stop();
+    }
+  }
+
+  function resetVoiceUI() {
+    isRecording = false;
+    voiceBtn.classList.remove("cf-recording");
+    voiceBtn.innerHTML = ICONS.mic;
+    voiceBar.classList.remove("cf-visible");
+  }
+
+  // Utiliser la logique existante de sendMessage mais sans l'UI input
+  async function sendTextMessage(text) {
+    isTyping = true;
+    typing.classList.add("cf-visible");
+    scrollToBottom();
+
     try {
-      const formData = new FormData();
-      formData.append("audio", blob, "recording.webm");
-      formData.append("language", CONFIG.language);
-      formData.append("session_id", sessionId);
-
-      const resp = await fetch(`${CONFIG.agentUrl}/vocal/transcribe-and-respond`, {
+      const resp = await fetch(`${CONFIG.agentUrl}/chat`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, session_id: sessionId }),
       });
-
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
       const data = await resp.json();
-      if (data.transcription) addMessage("🎤 " + data.transcription, "user");
       addMessage(data.response || T.errorMessage, "bot");
-      if (data.audio_base64) {
-        const audio = new Audio("data:audio/mp3;base64," + data.audio_base64);
-        audio.play().catch(() => {});
-      }
+      if (data.transferred) addMessage(T.transferMessage, "bot");
     } catch (err) {
       addMessage(T.errorMessage, "bot");
       statusDot.classList.add("cf-offline");
@@ -652,7 +615,6 @@
     } finally {
       isTyping = false;
       typing.classList.remove("cf-visible");
-      voiceBar.classList.remove("cf-visible");
       scrollToBottom();
     }
   }

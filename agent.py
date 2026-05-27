@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Chatbot Factory - Agent Texte + Whisper installe a la volee"""
+"""Chatbot Factory - Agent Texte pour HF Space (vocal cote client via Web Speech API)"""
 
-import os, json, logging, subprocess, sys
+import os, json, logging
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, WebSocket
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -13,151 +13,168 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("agent")
 
-SYSTEM_PROMPT = "Tu es l'assistant de Clinique Dentaire Sourire a Montreal. Services: Nettoyage 150-250$, Blanchiment 400-600$, Orthodontie, Implants. Tel: (514) 555-0123. Chaleureux, concis, francais."
+# ─── Base de connaissances ───────────────────────────────────────────────────
 
-def call_llm(messages):
+KB_DIR = Path(__file__).parent / "knowledge_base"
+knowledge_docs = []
+
+try:
+    kb_path = KB_DIR / "knowledge.json"
+    if kb_path.exists():
+        with open(kb_path, "r", encoding="utf-8") as f:
+            knowledge_docs = json.load(f)
+        logger.info(f"KB chargee: {len(knowledge_docs)} docs")
+except Exception as e:
+    logger.warning(f"KB non chargee: {e}")
+
+# ─── System prompt ───────────────────────────────────────────────────────────
+
+def load_system_prompt() -> str:
+    p = Path(__file__).parent / "system_prompt.md"
+    if p.exists():
+        return p.read_text(encoding="utf-8").strip()
+    # Fallback
+    return (
+        "Tu es l'assistant de Clinique Dentaire Sourire à Montréal. "
+        "Services: Nettoyage 150-250$, Blanchiment 400-600$, Orthodontie, Implants. "
+        "Tel: (514) 555-0123. "
+        "Chaleureux, concis (1-3 phrases), français. "
+        "Jamais de diagnostic médical. Si hors sujet, propose de transférer à un humain."
+    )
+
+SYSTEM_PROMPT = load_system_prompt()
+
+# ─── Recherche dans la base de connaissances ──────────────────────────────────
+
+def search_knowledge(query: str, max_chars: int = 2000) -> str:
+    if not knowledge_docs:
+        return ""
+    query_lower = query.lower()
+    qwords = [w for w in query_lower.split() if len(w) > 2]
+    scored = []
+    for doc in knowledge_docs:
+        text = json.dumps(doc, ensure_ascii=False).lower()
+        score = sum(1 for w in qwords if w in text)
+        if score > 0:
+            scored.append((score, doc.get("text", json.dumps(doc, ensure_ascii=False))))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    result_parts = []
+    total = 0
+    for _, text in scored:
+        total += len(text)
+        if total > max_chars:
+            break
+        result_parts.append(text)
+    return "\n---\n".join(result_parts)
+
+# ─── LLM avec fallback ────────────────────────────────────────────────────────
+
+def call_llm(messages: list) -> str:
     import urllib.request
-    key = os.getenv("OPENROUTER_API_KEY", "")
-    model = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
-    payload = json.dumps({"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 500}).encode()
-    req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=payload,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())["choices"][0]["message"]["content"]
 
-app = FastAPI()
+    candidates = []
+    backend = os.getenv("LLM_BACKEND", "auto")
+
+    if backend in ("auto", "openrouter"):
+        key = os.getenv("OPENROUTER_API_KEY", "")
+        model = os.getenv("OPENROUTER_MODEL", "openrouter/owl-alpha")
+        if key:
+            candidates.append(("openrouter", model, "https://openrouter.ai/api/v1/chat/completions", key))
+
+    if backend in ("auto", "openai"):
+        key = os.getenv("OPENAI_API_KEY", "")
+        model = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+        if key:
+            candidates.append(("openai", model, "https://api.openai.com/v1/chat/completions", key))
+
+    if not candidates:
+        logger.error("Aucune clé API LLM configurée")
+        return "Je suis désolé, le service est temporairement indisponible."
+
+    for name, model, url, key in candidates:
+        if not key:
+            continue
+        payload = {"model": model, "messages": messages, "temperature": 0.7}
+        if name == "openai":
+            payload["max_completion_tokens"] = 500
+        else:
+            payload["max_tokens"] = 500
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode(),
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.warning(f"LLM {name} a échoué: {e}, essai suivant...")
+
+    return "Je suis désolé, le service est temporairement indisponible."
+
+# ─── FastAPI App ─────────────────────────────────────────────────────────────
+
+app = FastAPI(title="Chatbot Factory")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-sessions = {}
+sessions: dict[str, list] = {}
+
 
 class ChatReq(BaseModel):
     message: str
     session_id: str = "default"
 
-@app.get("/") 
+
+@app.get("/")
 async def root():
-    return PlainTextResponse("OK")
+    return PlainTextResponse("OK — Chatbot Factory")
+
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "kb_loaded": len(knowledge_docs) > 0}
+
 
 @app.post("/chat")
 async def chat(req: ChatReq):
     sid = req.session_id
-    if sid not in sessions: sessions[sid] = []
+    if sid not in sessions:
+        sessions[sid] = []
     hist = sessions[sid]
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + hist[-10:] + [{"role": "user", "content": req.message}]
-    resp = call_llm(msgs)
-    hist += [{"role": "user", "content": req.message}, {"role": "assistant", "content": resp}]
+
+    # Recherche contextuelle
+    ctx = search_knowledge(req.message)
+    context_msg = ""
+    if ctx:
+        context_msg = f"\n\nInformations pertinentes trouvées:\n{ctx}"
+
+    # Construction des messages
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT + context_msg}]
+    # Historique (10 derniers)
+    for m in hist[-10:]:
+        msgs.append(m)
+    msgs.append({"role": "user", "content": req.message})
+
+    # Appel LLM
+    response_text = call_llm(msgs)
+
+    # Sauvegarde session
+    hist.append({"role": "user", "content": req.message})
+    hist.append({"role": "assistant", "content": response_text})
     sessions[sid] = hist[-20:]
-    return {"response": resp, "session_id": sid, "transferred": "transferer" in resp.lower()}
 
-# ─── Vocal avec Whisper installe a la volee ──────────────────────────────────
+    transferred = any(w in response_text.lower() for w in ["transférer", "transferer", "humain", "dentiste"])
 
-_whisper_model = None
+    return {
+        "response": response_text,
+        "session_id": sid,
+        "transferred": transferred,
+    }
 
-def ensure_whisper():
-    """Installe Whisper si necessaire et charge le modele."""
-    global _whisper_model
-    if _whisper_model is not None:
-        return _whisper_model
-
-    try:
-        import whisper
-        logger.info("Whisper deja disponible, chargement...")
-        _whisper_model = whisper.load_model("tiny")  # tiny = 75MB, beaucoup plus rapide
-        return _whisper_model
-    except ImportError:
-        logger.info("Whisper non disponible, installation...")
-
-    # Installer whisper + torch (CPU only, plus leger)
-    try:
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "--quiet",
-            "openai-whisper"
-        ], timeout=300)
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "--quiet",
-            "torch", "--index-url", "https://download.pytorch.org/whl/cpu"
-        ], timeout=600)
-
-        import whisper
-        logger.info("Whisper installe! Chargement modele tiny...")
-        _whisper_model = whisper.load_model("tiny")
-        return _whisper_model
-    except Exception as e:
-        logger.error(f"Installation Whisper echouee: {e}")
-        return None
-
-@app.get("/vocal/health")
-async def vh():
-    has_whisper = False
-    try:
-        import whisper
-        has_whisper = True
-    except ImportError:
-        pass
-    return {"status": "ok", "whisper_available": has_whisper, "model_loaded": _whisper_model is not None}
-
-@app.post("/vocal/transcribe-and-respond")
-async def vocal_ep(audio: UploadFile = File(...), language: str = Form("fr"), session_id: str = Form("default")):
-    import tempfile, os, base64
-
-    model = ensure_whisper()
-    if model is None:
-        return {"transcription": "", "response": "Vocal non disponible. Whisper n'a pas pu etre installe.", "audio_base64": "", "language": language}
-
-    # Sauvegarder l'audio
-    suffix = ".webm"
-    if audio.filename:
-        ext = Path(audio.filename).suffix.lower()
-        if ext in (".wav", ".mp3", ".ogg"): suffix = ext
-
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    try:
-        tmp.write(await audio.read())
-        tmp.close()
-
-        # Transcrire
-        result = model.transcribe(tmp.name, language=language if language in ("fr", "en") else None)
-        transcription = result.get("text", "").strip()
-
-        if not transcription:
-            return {"transcription": "", "response": "Je n'ai pas compris.", "audio_base64": "", "language": language}
-
-        # Reponse LLM
-        msgs = [{"role": "system", "content": "Assistant vocal clinique dentaire. Tres court (1-2 phrases). Francais."},
-                {"role": "user", "content": transcription}]
-        response_text = call_llm(msgs)
-
-        # TTS edge-tts (leger, pas de PyTorch)
-        audio_b64 = ""
-        try:
-            import edge_tts, asyncio
-            voice = "fr-FR-HenriNeural" if language == "fr" else "en-US-GuyNeural"
-            tts_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-            tts_tmp.close()
-            asyncio.run(edge_tts.Communicate(response_text, voice).save(tts_tmp.name))
-            with open(tts_tmp.name, "rb") as f:
-                audio_b64 = base64.b64encode(f.read()).decode()
-            os.unlink(tts_tmp.name)
-        except:
-            pass
-
-        return {"transcription": transcription, "response": response_text, "audio_base64": audio_b64, "language": language}
-    finally:
-        try: os.unlink(tmp.name)
-        except: pass
-
-@app.websocket("/vocal/ws")
-async def ws(ws: WebSocket):
-    await ws.accept()
-    try:
-        while True:
-            await ws.receive_bytes()
-            await ws.send_json({"type": "error", "text": "Use POST"})
-    except: pass
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 7860)))
+
+    port = int(os.getenv("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port)
