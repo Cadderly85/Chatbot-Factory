@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chatbot Factory - Agent Combine Texte + Vocal"""
+"""Chatbot Factory - Agent Combine Texte + Vocal (Whisper via API OpenAI)"""
 
 import os, json, logging, tempfile, base64
 from datetime import datetime
@@ -50,7 +50,7 @@ def call_llm(messages):
             continue
     return "Desole, erreur. Appelez (514) 555-0123."
 
-app = FastAPI(title="Chatbot Factory")
+app = FastAPI(title="Chatbot Factory - Texte + Vocal")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 sessions = {}
 
@@ -60,7 +60,7 @@ class ChatReq(BaseModel):
 
 @app.get("/")
 async def root():
-    return PlainTextResponse("OK")
+    return PlainTextResponse("Chatbot Factory OK - Texte + Vocal")
 
 @app.get("/health")
 async def health():
@@ -80,100 +80,81 @@ async def chat(req: ChatReq):
     return {"response": resp, "session_id": sid, "transferred": transferred}
 
 # ──────────────────────────────────────────────────────────────────────────────
-# VOCAL — charge Whisper/edge-tts seulement quand disponible
+# VOCAL — Whisper via API OpenAI (pas de dependance lourde)
 # ──────────────────────────────────────────────────────────────────────────────
-
-import importlib
-whisper_mod = None
-edge_tts_mod = None
-_WHISPER = None
-
-def _load_vocal():
-    global whisper_mod, edge_tts_mod, _WHISPER
-    try:
-        whisper_mod = importlib.import_module("whisper")
-        edge_tts_mod = importlib.import_module("edge_tts")
-        _WHISPER = whisper_mod.load_model("base")
-        logger.info("Vocal OK")
-        return True
-    except Exception as e:
-        logger.warning(f"Vocal: {e}")
-        return False
-
-# Tentative de chargement au demarrage (non bloquant)
-vocal_available = _load_vocal()
-
-def _ensure_whisper():
-    global _WHISPER
-    if _WHISPER is not None:
-        return _WHISPER
-    try:
-        if whisper_mod is None:
-            whisper_mod = importlib.import_module("whisper")
-        _WHISPER = whisper_mod.load_model("base")
-        vocal_available = True
-        return _WHISPER
-    except:
-        return None
 
 @app.get("/vocal/health")
 async def vh():
-    return {"status": "ok", "vocal_available": vocal_available, "whisper_loaded": _WHISPER is not None}
+    has_openai = bool(os.getenv("OPENAI_API_KEY", ""))
+    return {"status": "ok", "vocal_available": has_openai, "whisper": "api-openai" if has_openai else "unavailable"}
 
 @app.post("/vocal/transcribe-and-respond")
 async def vocal_ep(audio: UploadFile = File(...), language: str = Form("fr"), session_id: str = Form("default")):
-    if not vocal_available:
-        return {"transcription": "", "response": "Mode vocal non disponible. Utilisez le chat texte.", "audio_base64": "", "language": language}
+    import urllib.request
 
-    model = _ensure_whisper()
-    if model is None:
-        return {"transcription": "", "response": "Whisper non disponible.", "audio_base64": "", "language": language}
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        return {"transcription": "", "response": "Vocal non disponible (pas de cle OpenAI).", "audio_base64": "", "language": language}
 
+    # Sauvegarder l'audio en temp
     suffix = ".webm"
     if audio.filename:
         ext = Path(audio.filename).suffix.lower()
         if ext in (".wav", ".mp3", ".ogg"): suffix = ext
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    audio_data = await audio.read()
+
+    # 1. Transcrire avec Whisper API OpenAI
     try:
-        tmp.write(await audio.read())
-        tmp.close()
+        boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="audio{suffix}"\r\n'
+            f"Content-Type: audio/{suffix[1:]}\r\n\r\n"
+        ).encode() + audio_data + f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n--{boundary}--\r\n".encode()
 
-        # Transcrire avec Whisper
-        import subprocess
-        ffmpeg_cmd = ["ffmpeg", "-y", "-i", tmp.name, "-ar", "16000", "-ac", "1", "-f", "wav", tmp.name + ".wav"]
-        subprocess.run(ffmpeg_cmd, capture_output=True, timeout=30)
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/audio/transcriptions",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+            transcription = result.get("text", "").strip()
+    except Exception as e:
+        logger.error(f"Whisper API: {e}")
+        return {"transcription": "", "response": f"Erreur transcription: {str(e)[:100]}", "audio_base64": "", "language": language}
 
-        result = model.transcribe(tmp.name + ".wav")
-        transcription = result.get("text", "").strip()
+    if not transcription:
+        return {"transcription": "", "response": "Je n'ai pas compris. Pouvez-vous repeter?", "audio_base64": "", "language": language}
 
-        if not transcription:
-            return {"transcription": "", "response": "Je n'ai pas compris. Pouvez-vous repeter?", "audio_base64": "", "language": language}
+    # 2. Repondre via LLM
+    prompt = "Tu es l'assistant vocal d'une clinique dentaire. Tres court (1-2 phrases max). Chaleureux, naturel. Francais."
+    msgs = [{"role": "system", "content": prompt}, {"role": "user", "content": transcription}]
+    response_text = call_llm(msgs)
 
-        # Prompt vocal
-        prompt = "Tu es l'assistant vocal d'une clinique dentaire. Tres court (1-2 phrases max). Chaleureux, naturel. Francais."
-        msgs = [{"role": "system", "content": prompt}, {"role": "user", "content": transcription}]
-        response_text = call_llm(msgs)
+    # 3. TTS avec edge-tts (leger, pas besoin de PyTorch)
+    audio_b64 = ""
+    try:
+        import edge_tts
+        import asyncio
+        voice = "fr-FR-HenriNeural" if language == "fr" else "en-US-GuyNeural"
+        comm = edge_tts.Communicate(response_text, voice)
+        tts_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        tts_tmp.close()
+        asyncio.run(comm.save(tts_tmp.name))
+        with open(tts_tmp.name, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode()
+        os.unlink(tts_tmp.name)
+    except ImportError:
+        logger.warning("edge-tts non disponible")
+    except Exception as e:
+        logger.error(f"TTS: {e}")
 
-        # TTS avec edge-tts
-        audio_b64 = ""
-        try:
-            import asyncio
-            voice = "fr-FR-HenriNeural" if language == "fr" else "en-US-GuyNeural"
-            comm = edge_tts_mod.Communicate(response_text, voice)
-            tts_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-            tts_tmp.close()
-            asyncio.run(comm.save(tts_tmp.name))
-            with open(tts_tmp.name, "rb") as f:
-                audio_b64 = base64.b64encode(f.read()).decode()
-            os.unlink(tts_tmp.name)
-        except Exception as e:
-            logger.error(f"TTS: {e}")
-
-        return {"transcription": transcription, "response": response_text, "audio_base64": audio_b64, "language": language}
-    finally:
-        try: os.unlink(tmp.name)
-        except: pass
+    return {"transcription": transcription, "response": response_text, "audio_base64": audio_b64, "language": language}
 
 @app.websocket("/vocal/ws")
 async def ws(websocket: WebSocket):
