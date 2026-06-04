@@ -1,11 +1,11 @@
 FROM python:3.11-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
-COPY requirements_vocal.txt requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py .
-COPY .env.vocal* ./
+COPY agent.py .
+COPY system_prompt.md .
 RUN mkdir -p knowledge_base
-COPY knowledge_base/ knowledge_base/
+COPY knowledge_base/knowledge.json knowledge_base/knowledge.json
 EXPOSE 7860
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "agent:app", "--host", "0.0.0.0", "--port", "7860"]

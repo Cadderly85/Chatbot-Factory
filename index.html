@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Chatbot Factory — Test Widget Vocal</title>
+  <title>Chatbot Factory — Test Vocal (No Whisper)</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -12,11 +12,7 @@
       margin: 0;
       min-height: 100vh;
     }
-    .page {
-      padding: 40px;
-      max-width: 1000px;
-      margin: 0 auto;
-    }
+    .page { padding: 40px; max-width: 1000px; margin: 0 auto; }
     h1 { font-size: 28px; margin: 0 0 8px; }
     p { opacity: 0.85; line-height: 1.5; }
     code {
@@ -36,36 +32,48 @@
     .ok { color: #9dffb0; }
     .warn { color: #ffd27d; }
     .err { color: #ff9d9d; }
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .badge.client { background: #00cc66; color: #003311; }
+    .badge.server { background: #ffaa00; color: #332200; }
   </style>
 </head>
 <body>
   <div class="page">
-    <h1>Test du widget vocal</h1>
-    <p>Le widget doit apparaître en bas à droite. Cliquez sur le micro et parlez.</p>
-    <p>Backend HF : <code>https://cadderlyy-chatbot-factory-vocal.hf.space</code></p>
+    <h1>Test du widget vocal <span class="badge client">Client-Side</span></h1>
+    <p>Ce widget utilise <strong>Web Speech API</strong> (transcription côté navigateur) — aucun serveur Whisper requis.</p>
+    <p>Compatible : Chrome ✅, Edge ✅, Safari ✅, Firefox ❌</p>
+    <p>Backend : <code>https://cadderlyy-chatbot-factory-vocal.hf.space</code></p>
     <p>Page test : <code id="page-url"></code></p>
-    <p>Version widget : <code id="widget-version"></code></p>
+
     <div class="panel" id="debug">Initialisation…</div>
   </div>
 
   <div
     id="chatbot-vocal"
-    data-vocal-api-url="https://cadderlyy-chatbot-factory-vocal.hf.space">
+    data-agent-url="https://cadderlyy-chatbot-factory-vocal.hf.space"
+    data-language="fr"
+    data-tts-enabled="true">
   </div>
 
   <script>
-    window.__CF_WIDGET_VERSION__ = '2026-05-22c';
     document.getElementById('page-url').textContent = location.href;
-    document.getElementById('widget-version').textContent = window.__CF_WIDGET_VERSION__;
-    document.getElementById('debug').textContent = [
-      'API base: https://cadderlyy-chatbot-factory-vocal.hf.space',
-      'Transcribe endpoint: https://cadderlyy-chatbot-factory-vocal.hf.space/vocal/transcribe-and-respond',
-      'Health endpoint: https://cadderlyy-chatbot-factory-vocal.hf.space/vocal/health',
-      'Origin: ' + location.origin,
-      'Cache-buster: v=2026-05-22c'
+    document.getElementById('debug').innerHTML = [
+      '<span class="ok">API base:</span> https://cadderlyy-chatbot-factory-vocal.hf.space',
+      '<span class="ok">Chat endpoint:</span> https://cadderlyy-chatbot-factory-vocal.hf.space/chat',
+      '<span class="ok">Health endpoint:</span> https://cadderlyy-chatbot-factory-vocal.hf.space/health',
+      '<span class="warn">Transcription:</span> Web Speech API (côté navigateur)',
+      '<span class="warn">TTS réponse:</span> SpeechSynthesis (côté navigateur)',
+      '<span class="ok">Origin:</span> ' + location.origin,
     ].join('\n');
   </script>
 
-  <script src="https://cadderly85.github.io/Chatbot-Factory/vocal_widget.js?v=2026-05-22c"></script>
+  <script src="https://cadderly85.github.io/Chatbot-Factory/vocal_widget_nowhisper.js?v=2026-06-04a"></script>
 </body>
 </html>
