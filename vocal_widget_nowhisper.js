@@ -71,6 +71,7 @@
     let recognition = null;
     let silenceTimer = null;
     let stream = null;
+    let stoppedByUser = false;
 
     // ─── Interface ─────────────────────────────────────────────────────────────
 
@@ -339,17 +340,20 @@
             return;
         }
 
+        // Reset state
+        let finalTranscript = '';
+        let interimTranscript = '';
+        stoppedByUser = false;
+
         recognition = new SR();
         recognition.lang = CONFIG.language;
-        recognition.continuous = true;
+        recognition.continuous = false;  // ← false = plus fiable sur mobile
         recognition.interimResults = true;
         recognition.maxAlternatives = 1;
 
-        let finalTranscript = '';
-        let interimTranscript = '';
-
         recognition.onstart = () => {
             isRecording = true;
+            stoppedByUser = false;
             updateUI('recording');
             addMessage('🎤 Écoute en cours... Parlez maintenant.', 'info');
             startVisualizer();
@@ -369,34 +373,51 @@
             // Afficher l'interim en temps réel
             if (interimTranscript) {
                 updateLastMessage(interimTranscript, 'user');
+            } else if (finalTranscript) {
+                updateLastMessage(finalTranscript, 'user');
             }
         };
 
         recognition.onerror = (event) => {
             console.error('SpeechRecognition error:', event.error);
+            isRecording = false;
+
             if (event.error === 'not-allowed') {
                 addMessage('❌ Accès au microphone refusé. Vérifiez les permissions.', 'error');
             } else if (event.error === 'no-speech') {
                 addMessage('⚠️ Aucun son détecté. Réessayez.', 'info');
-            } else if (event.error === 'aborted') {
-                // User stopped, ignore
+            } else if (event.error === 'aborted' || event.error === 'service-not-allowed') {
+                // Aborted = souvent sur mobile quand le navigateur coupe le micro
+                // On essaie de relancer automatiquement si pas arrêté par l'utilisateur
+                if (!stoppedByUser && finalTranscript.trim()) {
+                    sendTranscript(finalTranscript.trim());
+                } else if (!stoppedByUser) {
+                    addMessage('⚠️ Reconnaissance interrompue. Réessayez.', 'info');
+                }
             } else {
                 addMessage(`❌ Erreur: ${event.error}`, 'error');
             }
-            stopRecording();
+
+            stopVisualizer();
+            updateUI('ready');
         };
 
         recognition.onend = () => {
-            // Si on a une transcription finale, l'envoyer
-            if (finalTranscript.trim()) {
+            isRecording = false;
+            stopVisualizer();
+
+            // Envoyer le transcript si on a quelque chose ET que l'utilisateur n'a pas cliqué stop
+            if (!stoppedByUser && finalTranscript.trim()) {
                 sendTranscript(finalTranscript.trim());
-            } else if (!isRecording) {
-                // Arrêté manuellement sans transcription
+            } else if (!stoppedByUser && interimTranscript.trim()) {
+                // Si on a seulement de l'interim (pas de final), envoyer quand même
+                sendTranscript(interimTranscript.trim());
+            } else if (stoppedByUser && finalTranscript.trim()) {
+                // L'utilisateur a cliqué stop mais on a du texte final
+                sendTranscript(finalTranscript.trim());
+            } else {
                 updateUI('ready');
             }
-            // Reset
-            finalTranscript = '';
-            interimTranscript = '';
         };
 
         try {
@@ -418,9 +439,9 @@
         if (!isRecording) return;
 
         isRecording = false;
+        stoppedByUser = true;
         clearTimeout(silenceTimer);
         stopVisualizer();
-
         if (recognition) {
             try {
                 recognition.stop();
@@ -429,8 +450,6 @@
             }
             recognition = null;
         }
-
-        updateUI('ready');
     }
 
     // ─── Envoi au serveur ──────────────────────────────────────────────────────
